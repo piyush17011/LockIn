@@ -53,7 +53,8 @@ export const updateStreak = async (userId) => {
   const today = format(new Date(), 'yyyy-MM-dd');
   if (data.lastWorkoutDate === today) return;
   const yesterday = format(new Date(Date.now() - 86400000), 'yyyy-MM-dd');
-  const streak = data.lastWorkoutDate === yesterday ? (data.streak || 0) + 1 : 1;
+  const lastDate = data.lastWorkoutDate || '';  // ← handles null
+  const streak = lastDate === yesterday ? (data.streak || 0) + 1 : 1;
   const longestStreak = Math.max(streak, data.longestStreak || 0);
   await updateDoc(userRef, { streak, longestStreak, lastWorkoutDate: today });
 };
