@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "LockIn",
-    "slug": "lockin",
+    "slug": "lock-in",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
