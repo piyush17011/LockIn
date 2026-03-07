@@ -8,6 +8,8 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+s2.svg
+svg1.svg
 
 # Native
 .kotlin/
