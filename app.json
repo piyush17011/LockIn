@@ -14,10 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.piyushbhalwalkar.lockin",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+      "bundleIdentifier": "com.piyushbhalwalkar.lockin"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,13 +30,9 @@
     "plugins": [
       "expo-font"
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
     "extra": {
-      "router": {},
       "eas": {
-        "projectId": "2999782b-9c6b-41c0-bdd1-b2fb244c6e3f"
+        "projectId": "a5c0ffd6-8f28-42b2-96e5-d0107e8b6b68"
       }
     }
   }
