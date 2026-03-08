@@ -21,6 +21,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#080b10"
       },
+      "googleServicesFile": "./google-services.json",
       "package": "com.piyushbhalwalkar.lockin"
     },
     "web": {
@@ -29,7 +30,9 @@
     },
     "plugins": [
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      "@react-native-google-signin/google-signin",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {
