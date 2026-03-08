@@ -30,9 +30,9 @@ function TabNavigator() {
             backgroundColor: '#0e1219',
             borderTopColor: '#1e2535',
             borderTopWidth: 1,
-            height: 40 + insets.bottom,
+            height: 60 + insets.bottom,
             paddingBottom: insets.bottom,
-            paddingTop: 5,
+            paddingTop: 8,
           },
           tabBarShowLabel: false,
           tabBarIcon: ({ focused }) => {

@@ -23,8 +23,19 @@ const DAY_COLORS = {
 function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose }) {
   const [search, setSearch] = useState('');
   const [customName, setCustomName] = useState('');
-  const presets = PRESET_EXERCISES[workoutType] || [];
-  const filtered = presets.filter((e) =>
+
+  // All exercises across every type (deduplicated by name)
+  const allExercises = Object.entries(PRESET_EXERCISES)
+    .filter(([key]) => key !== 'Custom')
+    .flatMap(([type, exList]) => exList.map((e) => ({ ...e, sourceType: type })))
+    .filter((e, idx, arr) => arr.findIndex((x) => x.name === e.name) === idx);
+
+  // Base pool: if Custom or searching, show all; else show type presets
+  const basePool = (workoutType === 'Custom' || search)
+    ? allExercises
+    : (PRESET_EXERCISES[workoutType] || []);
+
+  const filtered = basePool.filter((e) =>
     e.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -212,10 +223,17 @@ export default function CalendarScreen() {
   // ── Exercise picker toggle ──────────────────────────────────────────────────
   const handlePickExercise = (item) => {
     const exists = exercises.find((e) => e.name === item.name);
+    let newExercises;
     if (exists) {
-      setExercises(exercises.filter((e) => e.name !== item.name));
+      newExercises = exercises.filter((e) => e.name !== item.name);
     } else {
-      setExercises([...exercises, { name: item.name, emoji: item.emoji, muscle: item.muscle, sets: [{ weight: '', reps: '' }] }]);
+      newExercises = [...exercises, { name: item.name, emoji: item.emoji, muscle: item.muscle, sourceType: item.sourceType, sets: [{ weight: '', reps: '' }] }];
+    }
+    setExercises(newExercises);
+    // Auto-set type to Custom if exercises come from multiple routine types
+    const sourceTypes = [...new Set(newExercises.map((e) => e.sourceType).filter(Boolean))];
+    if (sourceTypes.length > 1) {
+      setWorkoutType('Custom');
     }
   };
 
@@ -445,7 +463,7 @@ export default function CalendarScreen() {
                 <TouchableOpacity
                   key={t}
                   style={[styles.typeChip, workoutType === t && styles.typeChipActive]}
-                  onPress={() => { setWorkoutType(t); setExercises([]); }}
+                  onPress={() => setWorkoutType(t)}
                 >
                   <Text style={[styles.typeChipText, workoutType === t && { color: Colors.accent }]}>{t}</Text>
                 </TouchableOpacity>

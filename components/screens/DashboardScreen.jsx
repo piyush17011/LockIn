@@ -26,9 +26,11 @@ function getTodayStatus(workouts) {
   return { label: todayWorkout.type, icon: '✅', color: Colors.accent };
 }
 
+const TODAY = format(new Date(), 'yyyy-MM-dd');
+
 export default function DashboardScreen({ navigation }) {
   const { user, userData } = useAuth();
-  const { workouts, loading } = useWorkoutsContext();
+  const { workouts, restDays, loading } = useWorkoutsContext();
   const [quote] = useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)]);
   const [expandedId, setExpandedId] = useState(null);
   const streakScale = useSharedValue(1);
@@ -45,8 +47,11 @@ export default function DashboardScreen({ navigation }) {
   const weekEnd_str = format(weekDays[6], 'yyyy-MM-dd');
 
   const workedOutDates = new Set(workouts.map((w) => w.date));
+  const restDatesSet = new Set(restDays);
   const workoutTypeMap = {};
   workouts.forEach((w) => { workoutTypeMap[w.date] = w.type; });
+  const allActivityDates = [...workedOutDates, ...restDatesSet];
+  const firstActivityDate = allActivityDates.length > 0 ? [...allActivityDates].sort()[0] : null;
 
   const streak = userData?.streak || 0;
   const todayStatus = getTodayStatus(workouts);
@@ -126,16 +131,34 @@ export default function DashboardScreen({ navigation }) {
                 return (
                   <View key={i} style={styles.dayCol}>
                     <Text style={[styles.dayLabel, isToday && { color: Colors.accent }]}>{WEEK_DAYS[i]}</Text>
-                    <View style={[
-                      styles.dayDot,
-                      worked && styles.dayDotFilled,
-                      isToday && !worked && { borderColor: Colors.accent },
-                    ]}>
-                      {worked && <Ionicons name="checkmark" size={12} color={Colors.bg} />}
-                    </View>
-                    <Text style={[styles.dayDate, worked && { color: Colors.accent }]}>
-                      {wType ? wType.slice(0, 3) : format(day, 'd')}
-                    </Text>
+                    {(() => {
+                      const isRest   = restDatesSet.has(dateStr);
+                      const isMissed = !worked && !isRest && dateStr < TODAY &&
+                        firstActivityDate !== null && dateStr >= firstActivityDate;
+                      return (
+                        <>
+                          <View style={[
+                            styles.dayDot,
+                            worked   && styles.dayDotFilled,
+                            isRest   && styles.dayDotRest,
+                            isMissed && styles.dayDotMissed,
+                            isToday  && !worked && !isRest && !isMissed && { borderColor: Colors.accent },
+                          ]}>
+                            {worked   && <Ionicons name="checkmark" size={12} color={Colors.bg} />}
+                            {isRest   && <Text style={{ fontSize: 10 }}>😌</Text>}
+                            {isMissed && <Text style={{ fontSize: 10 }}>✗</Text>}
+                          </View>
+                          <Text style={[
+                            styles.dayDate,
+                            worked   && { color: Colors.accent },
+                            isRest   && { color: '#ff9f43' },
+                            isMissed && { color: '#ff6b6b' },
+                          ]}>
+                            {wType ? wType.slice(0, 4) : format(day, 'd')}
+                          </Text>
+                        </>
+                      );
+                    })()}
                   </View>
                 );
               })}
@@ -283,6 +306,8 @@ const styles = StyleSheet.create({
   dayCol: { alignItems: 'center', gap: 4 },
   dayLabel: { color: Colors.muted, fontSize: 12, fontWeight: '600' },
   dayDot: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
+  dayDotRest:   { backgroundColor: 'rgba(255,159,67,0.2)',  borderColor: '#ff9f43' },
+  dayDotMissed: { backgroundColor: 'rgba(255,107,107,0.2)', borderColor: '#ff6b6b' },
   dayDotFilled: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   dayDate: { color: Colors.muted, fontSize: 10, fontWeight: '600' },
   sectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700', marginBottom: Spacing.md },
