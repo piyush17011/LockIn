@@ -1,32 +1,43 @@
 {
-  "cli": {
-    "version": ">= 18.1.0",
-    "appVersionSource": "remote"
-  },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "android": {
-        "googleServicesFile": "./google-services.json"
-      }
+  "expo": {
+    "name": "LockIn",
+    "slug": "lock-in",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "lockin",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#080b10"
     },
-    "preview": {
-      "distribution": "internal",
-      "android": {
-        "buildType": "apk",
-        "googleServicesFile": "./google-services.json"
-      }
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.piyushbhalwalkar.lockin"
     },
-    "production": {
-      "autoIncrement": true,
-      "android": {
-        "buildType": "apk",
-        "googleServicesFile": "./google-services.json"
+    "android": {
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#080b10"
+      },
+      "package": "com.piyushbhalwalkar.lockin"
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      "@react-native-google-signin/google-signin",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a5c0ffd6-8f28-42b2-96e5-d0107e8b6b68"
       }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }
