@@ -4,6 +4,7 @@
 node_modules/
 .npmrc
 .env
+rules.txt
 # Expo
 .expo/
 dist/
