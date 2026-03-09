@@ -4,6 +4,7 @@ import { Calendar } from 'react-native-calendars';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+import WorkoutShareSheet from './WorkoutShareSheet';
 import { useWorkoutsContext } from '../../hooks/WorkoutsContext';
 import { logWorkout, deleteWorkout, markRestDay } from '../../services/workoutService';
 import { WORKOUT_TYPES, PRESET_EXERCISES } from '../../constants/exercises';
@@ -110,11 +111,12 @@ function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function CalendarScreen() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const { workouts, restDays, refresh, addWorkoutLocally, removeWorkoutLocally, addRestDayLocally } = useWorkoutsContext();
 
   const [selected, setSelected] = useState(TODAY);
   const [logModalVisible, setLogModalVisible] = useState(false);
+  const [shareWorkout, setShareWorkout] = useState(null);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [workoutType, setWorkoutType] = useState('Push');
   const [notes, setNotes] = useState('');
@@ -273,9 +275,8 @@ export default function CalendarScreen() {
     setNotes('');
     const tempId = `temp_${Date.now()}`;
     addWorkoutLocally({ id: tempId, userId: user.uid, type: workoutType, exercises: flat, notes, date: selected });
-    Alert.alert('🔥 Locked in!', 'Workout saved. Keep grinding!');
     logWorkout(user.uid, { type: workoutType, exercises: flat, notes, date: selected })
-      .then(() => refresh())
+      .then((id) => { refresh(); setShareWorkout({ id, type: workoutType, exercises: flat, notes, date: selected }); })
       .catch(() => { removeWorkoutLocally(tempId); Alert.alert('Error', 'Failed to save workout. Please try again.'); });
   };
 
@@ -404,9 +405,14 @@ export default function CalendarScreen() {
               <Animated.View key={w.id} entering={FadeIn.duration(300)} style={styles.workoutCard}>
                 <View style={styles.workoutCardHeader}>
                   <View style={styles.typeBadge}><Text style={styles.typeBadgeText}>{w.type}</Text></View>
-                  <TouchableOpacity onPress={() => handleDelete(w.id)}>
-                    <Ionicons name="trash-outline" size={18} color={Colors.red} />
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => setShareWorkout(w)}>
+                      <Ionicons name="share-social-outline" size={18} color={Colors.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDelete(w.id)}>
+                      <Ionicons name="trash-outline" size={18} color={Colors.red} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 {w.exercises?.map((ex, i) => {
                   const repsArr = ex.reps ? ex.reps.toString().split('/') : [];
@@ -438,6 +444,23 @@ export default function CalendarScreen() {
         </Animated.View>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Share Sheet */}
+      <Modal
+        visible={!!shareWorkout}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShareWorkout(null)}
+      >
+        {shareWorkout && (
+          <WorkoutShareSheet
+            workout={shareWorkout}
+            streak={userData?.streak || 0}
+            userName={userData?.displayName || user?.displayName || 'Athlete'}
+            onClose={() => setShareWorkout(null)}
+          />
+        )}
+      </Modal>
 
       <ExercisePicker
         visible={pickerVisible}
