@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Alert, Image, Modal, Pressable,
+  Alert, Image, Modal, Pressable, ScrollView,
 } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
@@ -234,9 +234,10 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
 
   return (
     <View style={styles.root}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
       <View style={styles.handle} />
       <Text style={styles.title}>Share Your Workout</Text>
-      <Text style={styles.sub}>Add a photo or share the card directly 🔥</Text>
+      <Text style={styles.sub}>Add a photo or share the card 🔥</Text>
 
       {/* Card preview */}
       <View style={styles.cardWrap}>
@@ -261,16 +262,16 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
       {/* Photo options */}
       <View style={styles.photoOptions}>
         <TouchableOpacity style={styles.photoBtn} onPress={() => setCameraOpen(true)}>
-          <Ionicons name="camera-outline" size={18} color="#00f5c4" />
-          <Text style={styles.photoBtnText}>{photoUri ? 'Retake Selfie' : 'Take Selfie'}</Text>
+          <Ionicons name="camera-outline" size={16} color="#00f5c4" />
+          <Text style={styles.photoBtnText}>{photoUri ? 'Retake' : 'Selfie'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.photoBtn} onPress={pickFromGallery}>
-          <Ionicons name="image-outline" size={18} color="#ff9f43" />
-          <Text style={[styles.photoBtnText, { color: '#ff9f43' }]}>{photoUri ? 'Change Photo' : 'Pick Photo'}</Text>
+          <Ionicons name="image-outline" size={16} color="#ff9f43" />
+          <Text style={[styles.photoBtnText, { color: '#ff9f43' }]}>{photoUri ? 'Change' : 'Gallery'}</Text>
         </TouchableOpacity>
         {photoUri && (
           <TouchableOpacity style={styles.photoBtn} onPress={() => setPhotoUri(null)}>
-            <Ionicons name="close-outline" size={18} color="#ff6b6b" />
+            <Ionicons name="close-outline" size={16} color="#ff6b6b" />
             <Text style={[styles.photoBtnText, { color: '#ff6b6b' }]}>Remove</Text>
           </TouchableOpacity>
         )}
@@ -319,6 +320,7 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
       <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
         <Text style={styles.closeBtnText}>Done</Text>
       </TouchableOpacity>
+      </ScrollView>
     </View>
   );
 }
@@ -392,7 +394,7 @@ const card = StyleSheet.create({
 
 // ─── Photo card styles ────────────────────────────────────────────────────────
 const photo = StyleSheet.create({
-  root: { width: 360, height: 580, borderRadius: 20, overflow: 'hidden', position: 'relative' },
+  root: { width: 300, height: 380, borderRadius: 20, overflow: 'hidden', position: 'relative' },
   image: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
   gradTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 120, backgroundColor: 'transparent', backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)' },
   gradBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 160, backgroundColor: 'rgba(0,0,0,0.55)' },
