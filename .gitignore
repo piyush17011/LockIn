@@ -13,7 +13,7 @@ expo-env.d.ts
 s2.svg
 svg1.svg
 google-services.json
-
+screenshots/
 # Native
 .kotlin/
 *.orig.*
