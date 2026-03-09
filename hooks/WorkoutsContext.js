@@ -35,6 +35,10 @@ export function WorkoutsProvider({ children }) {
     setWorkouts((prev) => prev.filter((w) => w.id !== workoutId));
   }, []);
 
+  const updateWorkoutLocally = useCallback((updated) => {
+    setWorkouts((prev) => prev.map((w) => w.id === updated.id ? { ...w, ...updated } : w));
+  }, []);
+
   const addRestDayLocally = useCallback((date) => {
     setRestDays((prev) => prev.includes(date) ? prev : [...prev, date]);
   }, []);
@@ -42,7 +46,7 @@ export function WorkoutsProvider({ children }) {
   return (
     <WorkoutsContext.Provider value={{
       workouts, restDays, loading,
-      refresh, addWorkoutLocally, removeWorkoutLocally, addRestDayLocally,
+      refresh, addWorkoutLocally, removeWorkoutLocally, updateWorkoutLocally, addRestDayLocally,
     }}>
       {children}
     </WorkoutsContext.Provider>

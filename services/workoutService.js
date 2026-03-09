@@ -69,3 +69,10 @@ export const getCalorieProfile = async (userId) => {
   const snap = await getDoc(userRef);
   return snap.data()?.calorieProfile || null;
 };
+
+// ── Update an existing workout ────────────────────────────────────────────────
+export async function updateWorkout(workoutId, { type, exercises, notes }) {
+  const { doc, updateDoc } = await import('firebase/firestore');
+  const { db } = await import('./firebase');
+  await updateDoc(doc(db, 'workouts', workoutId), { type, exercises, notes });
+}

@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, FlatList } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
-import WorkoutShareSheet from './WorkoutShareSheet';
 import { useWorkoutsContext } from '../../hooks/WorkoutsContext';
 import { logWorkout, deleteWorkout, markRestDay } from '../../services/workoutService';
 import { WORKOUT_TYPES, PRESET_EXERCISES } from '../../constants/exercises';
 import { Colors, Spacing, Radius } from '../../constants/theme';
 import { format, parseISO, isBefore, startOfDay } from 'date-fns';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TODAY = format(new Date(), 'yyyy-MM-dd');
 
@@ -24,19 +24,8 @@ const DAY_COLORS = {
 function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose }) {
   const [search, setSearch] = useState('');
   const [customName, setCustomName] = useState('');
-
-  // All exercises across every type (deduplicated by name)
-  const allExercises = Object.entries(PRESET_EXERCISES)
-    .filter(([key]) => key !== 'Custom')
-    .flatMap(([type, exList]) => exList.map((e) => ({ ...e, sourceType: type })))
-    .filter((e, idx, arr) => arr.findIndex((x) => x.name === e.name) === idx);
-
-  // Base pool: if Custom or searching, show all; else show type presets
-  const basePool = (workoutType === 'Custom' || search)
-    ? allExercises
-    : (PRESET_EXERCISES[workoutType] || []);
-
-  const filtered = basePool.filter((e) =>
+  const presets = PRESET_EXERCISES[workoutType] || [];
+  const filtered = presets.filter((e) =>
     e.name.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -111,16 +100,26 @@ function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function CalendarScreen() {
-  const { user, userData } = useAuth();
-  const { workouts, restDays, refresh, addWorkoutLocally, removeWorkoutLocally, addRestDayLocally } = useWorkoutsContext();
+  const { user } = useAuth();
+  const { workouts, restDays, refresh, addWorkoutLocally, removeWorkoutLocally, updateWorkoutLocally, addRestDayLocally } = useWorkoutsContext();
 
   const [selected, setSelected] = useState(TODAY);
   const [logModalVisible, setLogModalVisible] = useState(false);
-  const [shareWorkout, setShareWorkout] = useState(null);
+  const [editingWorkout, setEditingWorkout] = useState(null); // null = new, object = editing
+  const DRAFT_KEY = user?.uid ? `workout_draft_${user.uid}` : null;
   const [pickerVisible, setPickerVisible] = useState(false);
   const [workoutType, setWorkoutType] = useState('Push');
   const [notes, setNotes] = useState('');
   const [exercises, setExercises] = useState([]);
+
+  // ── Draft persistence ──────────────────────────────────────────────────────
+  // Save draft whenever user changes something in the log modal
+  useEffect(() => {
+    if (!DRAFT_KEY || !logModalVisible || editingWorkout) return;
+    if (exercises.length === 0 && !notes) return; // nothing to save yet
+    const draft = { workoutType, exercises, notes, date: selected };
+    AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draft)).catch(() => {});
+  }, [workoutType, exercises, notes]);
 
   // ── Derive day states from in-memory data ───────────────────────────────────
   const workoutDates = new Set(workouts.map((w) => w.date));
@@ -225,17 +224,10 @@ export default function CalendarScreen() {
   // ── Exercise picker toggle ──────────────────────────────────────────────────
   const handlePickExercise = (item) => {
     const exists = exercises.find((e) => e.name === item.name);
-    let newExercises;
     if (exists) {
-      newExercises = exercises.filter((e) => e.name !== item.name);
+      setExercises(exercises.filter((e) => e.name !== item.name));
     } else {
-      newExercises = [...exercises, { name: item.name, emoji: item.emoji, muscle: item.muscle, sourceType: item.sourceType, sets: [{ weight: '', reps: '' }] }];
-    }
-    setExercises(newExercises);
-    // Auto-set type to Custom if exercises come from multiple routine types
-    const sourceTypes = [...new Set(newExercises.map((e) => e.sourceType).filter(Boolean))];
-    if (sourceTypes.length > 1) {
-      setWorkoutType('Custom');
+      setExercises([...exercises, { name: item.name, emoji: item.emoji, muscle: item.muscle, sets: [{ weight: '', reps: '' }] }]);
     }
   };
 
@@ -275,12 +267,53 @@ export default function CalendarScreen() {
     setNotes('');
     const tempId = `temp_${Date.now()}`;
     addWorkoutLocally({ id: tempId, userId: user.uid, type: workoutType, exercises: flat, notes, date: selected });
+    Alert.alert('🔥 Locked in!', 'Workout saved. Keep grinding!');
     logWorkout(user.uid, { type: workoutType, exercises: flat, notes, date: selected })
-      .then((id) => { refresh(); setShareWorkout({ id, type: workoutType, exercises: flat, notes, date: selected }); })
+      .then(() => refresh())
       .catch(() => { removeWorkoutLocally(tempId); Alert.alert('Error', 'Failed to save workout. Please try again.'); });
   };
 
-  const openLogModal = () => { setExercises([]); setNotes(''); setWorkoutType('Push'); setLogModalVisible(true); };
+  const openLogModal = async () => {
+    setEditingWorkout(null);
+    // Try to restore draft
+    if (DRAFT_KEY) {
+      try {
+        const raw = await AsyncStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          setWorkoutType(draft.workoutType || 'Push');
+          setExercises(draft.exercises || []);
+          setNotes(draft.notes || '');
+          setLogModalVisible(true);
+          return;
+        }
+      } catch {}
+    }
+    setExercises([]);
+    setNotes('');
+    setWorkoutType('Push');
+    setLogModalVisible(true);
+  };
+
+  const openEditModal = (workout) => {
+    setEditingWorkout(workout);
+    setWorkoutType(workout.type || 'Push');
+    setNotes(workout.notes || '');
+    // Reconstruct exercises with sets from saved flat format
+    const restored = (workout.exercises || []).map((ex) => {
+      const repsArr = ex.reps ? ex.reps.toString().split('/') : [''];
+      const weightArr = ex.weight ? ex.weight.toString().split('/') : [''];
+      const count = ex.sets || repsArr.length || 1;
+      return {
+        name: ex.name, emoji: ex.emoji || '💪', muscle: ex.muscle || '',
+        sets: Array.from({ length: count }, (_, i) => ({
+          reps: repsArr[i] || '', weight: weightArr[i] || '',
+        })),
+      };
+    });
+    setExercises(restored);
+    setLogModalVisible(true);
+  };
 
   const handleDelete = (id) => Alert.alert('Delete', 'Remove this workout?', [
     { text: 'Cancel', style: 'cancel' },
@@ -405,14 +438,9 @@ export default function CalendarScreen() {
               <Animated.View key={w.id} entering={FadeIn.duration(300)} style={styles.workoutCard}>
                 <View style={styles.workoutCardHeader}>
                   <View style={styles.typeBadge}><Text style={styles.typeBadgeText}>{w.type}</Text></View>
-                  <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-                    <TouchableOpacity onPress={() => setShareWorkout(w)}>
-                      <Ionicons name="share-social-outline" size={18} color={Colors.accent} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => handleDelete(w.id)}>
-                      <Ionicons name="trash-outline" size={18} color={Colors.red} />
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity onPress={() => handleDelete(w.id)}>
+                    <Ionicons name="trash-outline" size={18} color={Colors.red} />
+                  </TouchableOpacity>
                 </View>
                 {w.exercises?.map((ex, i) => {
                   const repsArr = ex.reps ? ex.reps.toString().split('/') : [];
@@ -445,23 +473,6 @@ export default function CalendarScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* Share Sheet */}
-      <Modal
-        visible={!!shareWorkout}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShareWorkout(null)}
-      >
-        {shareWorkout && (
-          <WorkoutShareSheet
-            workout={shareWorkout}
-            streak={userData?.streak || 0}
-            userName={userData?.displayName || user?.displayName || 'Athlete'}
-            onClose={() => setShareWorkout(null)}
-          />
-        )}
-      </Modal>
-
       <ExercisePicker
         visible={pickerVisible}
         workoutType={workoutType}
@@ -474,8 +485,8 @@ export default function CalendarScreen() {
       <Modal visible={logModalVisible} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Log Workout</Text>
-            <TouchableOpacity onPress={() => setLogModalVisible(false)}>
+            <Text style={styles.modalTitle}>{editingWorkout ? 'Edit Workout' : 'Log Workout'}</Text>
+            <TouchableOpacity onPress={() => { setLogModalVisible(false); setEditingWorkout(null); if (DRAFT_KEY && !editingWorkout) AsyncStorage.removeItem(DRAFT_KEY).catch(()=>{}); }}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
           </View>
@@ -486,7 +497,7 @@ export default function CalendarScreen() {
                 <TouchableOpacity
                   key={t}
                   style={[styles.typeChip, workoutType === t && styles.typeChipActive]}
-                  onPress={() => setWorkoutType(t)}
+                  onPress={() => { setWorkoutType(t); setExercises([]); }}
                 >
                   <Text style={[styles.typeChipText, workoutType === t && { color: Colors.accent }]}>{t}</Text>
                 </TouchableOpacity>
@@ -569,7 +580,7 @@ export default function CalendarScreen() {
               onPress={handleSave}
               disabled={exercises.length === 0}
             >
-              <Text style={styles.saveBtnText}>🔥 Save Workout</Text>
+              <Text style={styles.saveBtnText}>{editingWorkout ? '✏️ Update Workout' : '🔥 Save Workout'}</Text>
             </TouchableOpacity>
             <View style={{ height: 60 }} />
           </ScrollView>

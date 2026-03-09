@@ -8,15 +8,17 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from './services/firebase';
 import { WorkoutsProvider } from './hooks/WorkoutsContext';
-import DashboardScreen from './components/screens/DashboardScreen';
-import CalendarScreen from './components/screens/CalendarScreen';
+import DashboardScreen  from './components/screens/DashboardScreen';
+import CalendarScreen   from './components/screens/CalendarScreen';
 import MeasurementsScreen from './components/screens/MeasurementsScreen';
-import CaloriesScreen from './components/screens/CaloriesScreen';
-import MuscleMapScreen from './components/screens/MuscleMapScreen';
-import LoginScreen from './components/screens/LoginScreen';
-import RegisterScreen from './components/screens/RegisterScreen';
+import CaloriesScreen   from './components/screens/CaloriesScreen';
+import MuscleMapScreen  from './components/screens/MuscleMapScreen';
+import FeedScreen       from './components/screens/FeedScreen';
+import ProfileScreen    from './components/screens/ProfileScreen';
+import LoginScreen      from './components/screens/LoginScreen';
+import RegisterScreen   from './components/screens/RegisterScreen';
 
-const Tab = createBottomTabNavigator();
+const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 function TabNavigator() {
@@ -61,6 +63,16 @@ function TabNavigator() {
   );
 }
 
+function MainStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs"        component={TabNavigator}   />
+      <Stack.Screen name="Feed"        component={FeedScreen}     />
+      <Stack.Screen name="UserProfile" component={ProfileScreen}  />
+    </Stack.Navigator>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(undefined);
 
@@ -84,7 +96,7 @@ export default function App() {
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {user ? (
-            <Stack.Screen name="Main" component={TabNavigator} />
+            <Stack.Screen name="Main" component={MainStack} />
           ) : (
             <>
               <Stack.Screen name="Login"    component={LoginScreen}    />
