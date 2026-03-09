@@ -27,13 +27,26 @@
       "bundler": "metro",
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      "expo-font",
-      "expo-asset",
-      "@react-native-google-signin/google-signin",
-      "expo-web-browser",
-      "expo-sharing"
-    ],
+   "plugins": [
+  "expo-font",
+  "expo-asset",
+  "@react-native-google-signin/google-signin",
+  "expo-web-browser",
+  [
+    "expo-media-library",
+    {
+      "photosPermission": "Allow LockIn to access your photos.",
+      "savePhotosPermission": "Allow LockIn to save workout cards to your photos.",
+      "isAccessMediaLocationEnabled": false
+    }
+  ],
+  [
+    "expo-camera",
+    {
+      "cameraPermission": "Allow LockIn to access your camera for workout selfies."
+    }
+  ]
+],
     "extra": {
       "eas": {
         "projectId": "a5c0ffd6-8f28-42b2-96e5-d0107e8b6b68"

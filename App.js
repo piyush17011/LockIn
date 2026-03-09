@@ -8,15 +8,16 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from './services/firebase';
 import { WorkoutsProvider } from './hooks/WorkoutsContext';
-import DashboardScreen  from './components/screens/DashboardScreen';
-import CalendarScreen   from './components/screens/CalendarScreen';
-import MeasurementsScreen from './components/screens/MeasurementsScreen';
-import CaloriesScreen   from './components/screens/CaloriesScreen';
-import MuscleMapScreen  from './components/screens/MuscleMapScreen';
-import FeedScreen       from './components/screens/FeedScreen';
-import ProfileScreen    from './components/screens/ProfileScreen';
-import LoginScreen      from './components/screens/LoginScreen';
-import RegisterScreen   from './components/screens/RegisterScreen';
+import DashboardScreen      from './components/screens/DashboardScreen';
+import CalendarScreen       from './components/screens/CalendarScreen';
+import MeasurementsScreen   from './components/screens/MeasurementsScreen';
+import CaloriesScreen       from './components/screens/CaloriesScreen';
+import MuscleMapScreen      from './components/screens/MuscleMapScreen';
+import FeedScreen           from './components/screens/FeedScreen';
+import ProfileScreen        from './components/screens/ProfileScreen';
+import LoginScreen          from './components/screens/LoginScreen';
+import RegisterScreen       from './components/screens/RegisterScreen';
+import WorkoutSessionScreen from './components/screens/WorkoutSessionScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -66,9 +67,10 @@ function TabNavigator() {
 function MainStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Tabs"        component={TabNavigator}   />
-      <Stack.Screen name="Feed"        component={FeedScreen}     />
-      <Stack.Screen name="UserProfile" component={ProfileScreen}  />
+      <Stack.Screen name="Tabs"           component={TabNavigator}         />
+      <Stack.Screen name="Feed"           component={FeedScreen}           />
+      <Stack.Screen name="UserProfile"    component={ProfileScreen}        />
+      <Stack.Screen name="WorkoutSession" component={WorkoutSessionScreen} options={{ gestureEnabled: false }} />
     </Stack.Navigator>
   );
 }

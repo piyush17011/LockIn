@@ -15,7 +15,6 @@ export async function uploadPostImage(userId, localUri) {
   formData.append('file', { uri: localUri, type: 'image/jpeg', name: `post_${userId}_${Date.now()}.jpg` });
   formData.append('upload_preset', CLOUDINARY_PRESET);
   formData.append('folder', `posts/${userId}`);
-
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
     { method: 'POST', body: formData }
@@ -25,13 +24,21 @@ export async function uploadPostImage(userId, localUri) {
   return data.secure_url;
 }
 
-// ── Create a post ─────────────────────────────────────────────────────────────
-export async function createPost(userId, userName, { imageUri, workoutType, streak, date }) {
+// ── Create a post (now includes duration + calories) ──────────────────────────
+export async function createPost(userId, userName, {
+  imageUri, workoutType, streak, date,
+  durationSeconds = 0, caloriesBurned = 0,
+  caption = '', exercises = [],
+}) {
   let imageUrl = null;
   if (imageUri) imageUrl = await uploadPostImage(userId, imageUri);
   const ref = await addDoc(collection(db, 'posts'), {
     userId, userName, imageUrl,
     workoutType, streak, date,
+    durationSeconds,
+    caloriesBurned,
+    caption,
+    exercises,
     likes: [],
     commentCount: 0,
     createdAt: serverTimestamp(),
@@ -41,13 +48,11 @@ export async function createPost(userId, userName, { imageUri, workoutType, stre
 
 // ── Fetch global feed ─────────────────────────────────────────────────────────
 export async function getGlobalFeed(limitCount = 20) {
-  // orderBy on single field auto-creates index in Firebase — this is safe
   const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(limitCount));
   try {
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   } catch {
-    // Fallback: no ordering while index builds
     const snap2 = await getDocs(collection(db, 'posts'));
     return snap2.docs
       .map((d) => ({ id: d.id, ...d.data() }))
@@ -75,10 +80,7 @@ export async function addComment(postId, userId, userName, text) {
 }
 
 export async function getComments(postId) {
-  const q = query(
-    collection(db, 'posts', postId, 'comments'),
-    orderBy('createdAt', 'asc')
-  );
+  const q = query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc'));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
@@ -87,7 +89,6 @@ export async function getComments(postId) {
 export async function followUser(followerId, followingId) {
   const id = `${followerId}_${followingId}`;
   await setDoc(doc(db, 'follows', id), { followerId, followingId, createdAt: serverTimestamp() });
-  // Only update own doc (follower count computed dynamically)
   await updateDoc(doc(db, 'users', followerId), { followingCount: increment(1) });
 }
 
@@ -96,7 +97,6 @@ export async function unfollowUser(followerId, followingId) {
   await updateDoc(doc(db, 'users', followerId), { followingCount: increment(-1) });
 }
 
-// Get live follower count for a user
 export async function getFollowerCount(userId) {
   const q = query(collection(db, 'follows'), where('followingId', '==', userId));
   const snap = await getDocs(q);
@@ -110,18 +110,11 @@ export async function isFollowing(followerId, followingId) {
 
 // ── Get user posts ────────────────────────────────────────────────────────────
 export async function getUserPosts(userId) {
-  const q = query(
-    collection(db, 'posts'),
-    where('userId', '==', userId)
-  );
+  const q = query(collection(db, 'posts'), where('userId', '==', userId));
   const snap = await getDocs(q);
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => {
-      const ta = a.createdAt?.toMillis?.() || 0;
-      const tb = b.createdAt?.toMillis?.() || 0;
-      return tb - ta;
-    });
+    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
 }
 
 // ── Search users ──────────────────────────────────────────────────────────────
@@ -138,7 +131,7 @@ export async function deletePost(postId) {
   await deleteDoc(doc(db, 'posts', postId));
 }
 
-// ── Get followers (people who follow userId) ──────────────────────────────────
+// ── Get followers ─────────────────────────────────────────────────────────────
 export async function getFollowers(userId) {
   const q = query(collection(db, 'follows'), where('followingId', '==', userId));
   const snap = await getDocs(q);
@@ -153,7 +146,7 @@ export async function getFollowers(userId) {
   return users.filter(Boolean);
 }
 
-// ── Get following (people userId follows) ─────────────────────────────────────
+// ── Get following ─────────────────────────────────────────────────────────────
 export async function getFollowing(userId) {
   const q = query(collection(db, 'follows'), where('followerId', '==', userId));
   const snap = await getDocs(q);

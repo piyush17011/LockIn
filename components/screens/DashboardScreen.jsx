@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInRight, useSharedValue, useAnimatedStyle, withSpring, withRepeat, withSequence } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+
 import { useWorkoutsContext } from '../../hooks/WorkoutsContext';
 import { logoutUser } from '../../services/authService';
 import { QUOTES } from '../../constants/exercises';
+import WorkoutShareSheet from './WorkoutShareSheet';
 import { Colors, Spacing, Radius } from '../../constants/theme';
 import { format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
 
@@ -31,6 +33,7 @@ export default function DashboardScreen({ navigation }) {
   const { workouts, loading } = useWorkoutsContext();
   const [quote] = useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)]);
   const [expandedId, setExpandedId] = useState(null);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
   const streakScale = useSharedValue(1);
 
   useEffect(() => {
@@ -44,6 +47,8 @@ export default function DashboardScreen({ navigation }) {
   const weekStart_str = format(weekDays[0], 'yyyy-MM-dd');
   const weekEnd_str = format(weekDays[6], 'yyyy-MM-dd');
 
+  const _todayStr = format(new Date(), 'yyyy-MM-dd');
+  const latestTodayWorkout = workouts.find((w) => w.date === _todayStr) || null;
   const workedOutDates = new Set(workouts.map((w) => w.date));
   const workoutTypeMap = {};
   // Use first logged workout per date (workouts are sorted newest-first, so reverse)
@@ -61,6 +66,15 @@ export default function DashboardScreen({ navigation }) {
     { label: 'Calories',     icon: 'flame-outline',   color: Colors.orange, tab: 'Calories'     },
     { label: 'Muscle Map',   icon: 'fitness-outline', color: Colors.blue,   tab: 'MuscleMap'    },
   ];
+
+
+  const handleShareWorkout = () => {
+    if (!latestTodayWorkout) {
+      Alert.alert("No workout logged today 💤", "Log a workout first, then you can share it with the world!");
+      return;
+    }
+    setShareModalVisible(true);
+  };
 
   return (
     <View style={styles.root}>
@@ -172,6 +186,25 @@ export default function DashboardScreen({ navigation }) {
           </TouchableOpacity>
         </Animated.View>
 
+
+        {/* Share Today's Workout */}
+        {latestTodayWorkout && (
+          <Animated.View entering={FadeInDown.duration(500).delay(275)}>
+            <TouchableOpacity style={styles.shareWorkoutBtn} onPress={handleShareWorkout} activeOpacity={0.85}>
+              <View style={styles.shareWorkoutLeft}>
+                <View style={styles.shareWorkoutIconWrap}>
+                  <Ionicons name="share-social" size={18} color="#080b10" />
+                </View>
+                <View>
+                  <Text style={styles.shareWorkoutTitle}>Share {latestTodayWorkout.type} Workout</Text>
+                  <Text style={styles.shareWorkoutSub}>Flex on the feed 💪</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#00f5c4" />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
         {/* Quick Actions */}
         <Animated.View entering={FadeInDown.duration(500).delay(300)}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -278,6 +311,21 @@ export default function DashboardScreen({ navigation }) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Share Workout Modal — uses the same WorkoutShareSheet as CalendarScreen */}
+      <Modal visible={shareModalVisible} animationType="slide" presentationStyle="pageSheet">
+        {latestTodayWorkout && (
+          <WorkoutShareSheet
+            workout={latestTodayWorkout}
+            streak={userData?.streak || 0}
+            userName={userData?.displayName || user?.displayName || 'Athlete'}
+            userId={user?.uid}
+            onClose={() => setShareModalVisible(false)}
+            navigation={navigation}
+          />
+        )}
+      </Modal>
+
     </View>
   );
 }
@@ -355,4 +403,79 @@ const styles = StyleSheet.create({
   communityTitle: { color: Colors.text, fontWeight: '800', fontSize: 16 },
   communitySub: { color: Colors.muted, fontSize: 12, marginTop: 2 },
   communityRight: { opacity: 0.9 },
+
+  // Share button
+  shareWorkoutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,245,196,0.08)', borderRadius: 16,
+    padding: 14, marginBottom: 16,
+    borderWidth: 1, borderColor: 'rgba(0,245,196,0.25)',
+  },
+  shareWorkoutLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  shareWorkoutIconWrap: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: '#00f5c4', alignItems: 'center', justifyContent: 'center',
+  },
+  shareWorkoutTitle: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
+  shareWorkoutSub: { color: '#6b7a99', fontSize: 12, marginTop: 2 },
+
+  // Share modal
+  shareSheet: { flex: 1, backgroundColor: '#080b10', paddingTop: 16 },
+  shareSheetHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderColor: '#1e2535',
+  },
+  shareSheetTitle: { color: '#ffffff', fontWeight: '800', fontSize: 18 },
+  shareSheetScroll: { padding: 20 },
+
+  // Share card
+  shareCard: {
+    backgroundColor: '#131822', borderRadius: 20, padding: 18,
+    borderWidth: 1, borderColor: '#1e2535', marginBottom: 20,
+  },
+  shareCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  shareCardEmoji: { fontSize: 28 },
+  shareCardType: { color: '#ffffff', fontWeight: '800', fontSize: 18 },
+  shareCardDate: { color: '#6b7a99', fontSize: 12, marginTop: 2 },
+  shareCardStreak: {
+    marginLeft: 'auto', backgroundColor: 'rgba(255,107,107,0.12)',
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: 'rgba(255,107,107,0.2)',
+  },
+  shareCardStreakText: { color: '#ff6b6b', fontWeight: '700', fontSize: 12 },
+  shareCardEx: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 8, borderTopWidth: 1, borderColor: '#1e2535',
+  },
+  shareCardExText: { color: '#e8edf5', fontSize: 14 },
+  shareCardExDetail: { color: '#6b7a99', fontSize: 13 },
+  shareCardMore: { color: '#6b7a99', fontSize: 13, marginTop: 8, fontStyle: 'italic' },
+
+  // Photo section
+  shareLabel: { color: '#6b7a99', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 10 },
+  photoPickerBtn: {
+    backgroundColor: '#131822', borderRadius: 16, borderWidth: 1.5,
+    borderColor: '#1e2535', borderStyle: 'dashed',
+    height: 120, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10, overflow: 'hidden',
+  },
+  photoPreview: { width: '100%', height: '100%' },
+  photoPlaceholder: { alignItems: 'center', gap: 8 },
+  photoPlaceholderText: { color: '#6b7a99', fontSize: 13 },
+  removePhotoBtn: { alignItems: 'center', marginBottom: 16 },
+  removePhotoText: { color: '#ff6b6b', fontSize: 13, fontWeight: '600' },
+
+  // Share app buttons
+  shareAppRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  shareAppBtn: { flex: 1, alignItems: 'center', gap: 8 },
+  shareAppIcon: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  shareAppLabel: { color: '#8892a4', fontSize: 12, fontWeight: '600' },
+
+  // Community post
+  communityPostBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, backgroundColor: '#00f5c4', borderRadius: 16, padding: 16,
+  },
+  communityPostBtnText: { color: '#080b10', fontWeight: '800', fontSize: 15 },
 });

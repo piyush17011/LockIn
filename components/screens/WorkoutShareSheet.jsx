@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Alert, Image, Modal, Pressable, ScrollView,
+  Alert, Image, ScrollView, TextInput,
 } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
@@ -11,107 +11,106 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { createPost } from '../../services/socialService';
+import { formatDurationShort } from '../../constants/calorieCalc';
 
-// ─── Overlay Card (rendered on top of photo) ─────────────────────────────────
-function OverlayCard({ workout, streak, userName }) {
+// ─── Minimal frosted pill overlay (photo mode) ───────────────────────────────
+function OverlayCard({ workout, streak }) {
   const date = workout.date
-    ? format(new Date(workout.date + 'T12:00:00'), 'EEE, MMM d yyyy')
-    : format(new Date(), 'EEE, MMM d yyyy');
-  const time = format(new Date(), 'h:mm a');
+    ? format(new Date(workout.date + 'T12:00:00'), 'EEE, MMM d')
+    : format(new Date(), 'EEE, MMM d');
+  const duration = workout.durationSeconds ? formatDurationShort(workout.durationSeconds) : null;
+  const calories = workout.caloriesBurned || null;
 
   return (
     <View style={overlay.root}>
-      {/* Top bar */}
+      {/* Top-left: LOCKIN wordmark only */}
       <View style={overlay.topBar}>
-        <View style={overlay.logoRow}>
-          <Text style={overlay.logoIcon}>🔒</Text>
-          <Text style={overlay.brandName}>LOCK<Text style={{ color: '#00f5c4' }}>IN</Text></Text>
-        </View>
-        <View style={overlay.streakBadge}>
-          <Text style={overlay.streakFire}>🔥</Text>
+        <Text style={overlay.brand}>LOCK<Text style={overlay.brandAccent}>IN</Text></Text>
+        <View style={overlay.streakPill}>
+          <Text style={overlay.streakLabel}>⚡</Text>
           <Text style={overlay.streakNum}>{streak}</Text>
+          <Text style={overlay.streakLabel}> day streak</Text>
         </View>
       </View>
 
-      {/* Bottom bar */}
-      <View style={overlay.bottomBar}>
-        <Text style={overlay.workoutType}>{workout.type}</Text>
-        <Text style={overlay.userName}>{userName}</Text>
-        <View style={overlay.metaRow}>
-          <Text style={overlay.metaText}>📅 {date}</Text>
-          <Text style={overlay.metaDot}>·</Text>
-          <Text style={overlay.metaText}>⏱ {time}</Text>
+      {/* Bottom: slim frosted pill — just the essentials */}
+      <View style={overlay.pill}>
+        <Text style={overlay.workoutType}>{workout.type.toUpperCase()}</Text>
+        <View style={overlay.statsRow}>
+          {duration && <Text style={overlay.stat}>{duration}</Text>}
+          {duration && calories && <Text style={overlay.dot}>·</Text>}
+          {calories && <Text style={overlay.stat}>{calories} cal</Text>}
+          <Text style={overlay.dot}>·</Text>
+          <Text style={overlay.stat}>{date}</Text>
         </View>
-        <Text style={overlay.watermark}>lockin.app</Text>
       </View>
     </View>
   );
 }
 
-// ─── Capture Card (full card without photo — fallback) ────────────────────────
+// ─── Standalone Card (no photo) ───────────────────────────────────────────────
 function StandaloneCard({ cardRef, workout, streak, userName }) {
   const date = workout.date
-    ? format(new Date(workout.date + 'T12:00:00'), 'EEEE, MMM d yyyy')
-    : format(new Date(), 'EEEE, MMM d yyyy');
-  const time = format(new Date(), 'h:mm a');
+    ? format(new Date(workout.date + 'T12:00:00'), 'EEE, MMM d yyyy')
+    : format(new Date(), 'EEE, MMM d yyyy');
+  const duration = workout.durationSeconds ? formatDurationShort(workout.durationSeconds) : null;
+  const calories = workout.caloriesBurned || null;
 
   return (
     <View ref={cardRef} style={card.root} collapsable={false}>
-      <View style={card.accentLine} />
-      <View style={card.cornerTL} />
-      <View style={card.cornerBR} />
+      {/* Top accent bar */}
+      <View style={card.accentBar} />
 
+      {/* Header row: LOCKIN + streak */}
       <View style={card.header}>
-        <View style={card.logoWrap}>
-          <Text style={card.logoIcon}>🔒</Text>
-        </View>
-        <View>
-          <Text style={card.brandName}>LOCK<Text style={{ color: '#00f5c4' }}>IN</Text></Text>
-          <Text style={card.brandTagline}>Lock in. Level up.</Text>
-        </View>
-        <View style={card.streakBadge}>
-          <Text style={card.streakFire}>🔥</Text>
+        <Text style={card.brand}>LOCK<Text style={card.brandAccent}>IN</Text></Text>
+        <View style={card.streakPill}>
           <Text style={card.streakNum}>{streak}</Text>
-          <Text style={card.streakLabel}>streak</Text>
+          <Text style={card.streakSuffix}> day streak</Text>
         </View>
       </View>
 
+      {/* Workout name — hero */}
+      <Text style={card.workoutType}>{workout.type.toUpperCase()}</Text>
+      <Text style={card.userName}>{userName}</Text>
+
+      {/* Divider */}
       <View style={card.divider} />
 
-      <View style={card.body}>
-        <Text style={card.userName}>{userName}</Text>
-        <Text style={card.completedText}>just locked in a</Text>
-        <Text style={card.workoutType}>{workout.type}</Text>
-        <Text style={card.completedText}>workout 💪</Text>
+      {/* Stats row */}
+      <View style={card.statsRow}>
+        {duration && (
+          <View style={card.statBlock}>
+            <Text style={card.statValue}>{duration}</Text>
+            <Text style={card.statLabel}>TIME</Text>
+          </View>
+        )}
+        {duration && calories && <View style={card.statSep} />}
+        {calories && (
+          <View style={card.statBlock}>
+            <Text style={card.statValue}>{calories}</Text>
+            <Text style={card.statLabel}>CAL</Text>
+          </View>
+        )}
+        {(duration || calories) && <View style={card.statSep} />}
+        <View style={card.statBlock}>
+          <Text style={card.statValue}>{date}</Text>
+          <Text style={card.statLabel}>DATE</Text>
+        </View>
       </View>
 
-      <View style={card.metaRow}>
-        <View style={card.metaChip}>
-          <Ionicons name="calendar-outline" size={13} color="#00f5c4" />
-          <Text style={card.metaText}>{date}</Text>
-        </View>
-        <View style={card.metaChip}>
-          <Ionicons name="time-outline" size={13} color="#00f5c4" />
-          <Text style={card.metaText}>{time}</Text>
-        </View>
-      </View>
-
-      <View style={card.footer}>
-        <Text style={card.footerText}>lockin.app  ·  track. grind. grow.</Text>
-      </View>
+      {/* Footer */}
+      <Text style={card.footer}>lockin.app</Text>
     </View>
   );
 }
 
-// ─── Photo + Overlay Card (captured as one image) ────────────────────────────
-function PhotoCard({ cardRef, photoUri, workout, streak, userName }) {
+// ─── Photo + Overlay Card ─────────────────────────────────────────────────────
+function PhotoCard({ cardRef, photoUri, workout, streak }) {
   return (
     <View ref={cardRef} style={photo.root} collapsable={false}>
       <Image source={{ uri: photoUri }} style={photo.image} resizeMode="cover" />
-      {/* Dark gradient at top and bottom */}
-      <View style={photo.gradTop} />
-      <View style={photo.gradBottom} />
-      <OverlayCard workout={workout} streak={streak} userName={userName} />
+      <OverlayCard workout={workout} streak={streak} />
     </View>
   );
 }
@@ -123,7 +122,6 @@ function CameraScreen({ onCapture, onClose }) {
   const [permission, requestPermission] = useCameraPermissions();
 
   if (!permission) return <View style={cam.root} />;
-
   if (!permission.granted) {
     return (
       <View style={cam.permRoot}>
@@ -140,22 +138,19 @@ function CameraScreen({ onCapture, onClose }) {
 
   const takePicture = async () => {
     if (!cameraRef.current) return;
-    const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
-    onCapture(photo.uri);
+    const p = await cameraRef.current.takePictureAsync({ quality: 0.85 });
+    onCapture(p.uri);
   };
 
   return (
     <View style={cam.root}>
       <CameraView ref={cameraRef} style={cam.camera} facing={facing}>
-        {/* Close */}
         <TouchableOpacity style={cam.closeBtn} onPress={onClose}>
           <Ionicons name="close" size={26} color="#fff" />
         </TouchableOpacity>
-        {/* Flip */}
         <TouchableOpacity style={cam.flipBtn} onPress={() => setFacing(f => f === 'front' ? 'back' : 'front')}>
           <Ionicons name="camera-reverse-outline" size={26} color="#fff" />
         </TouchableOpacity>
-        {/* Capture */}
         <View style={cam.captureWrap}>
           <TouchableOpacity style={cam.captureBtn} onPress={takePicture}>
             <View style={cam.captureInner} />
@@ -172,11 +167,15 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
   const [photoUri, setPhotoUri] = useState(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [caption, setCaption] = useState('');
+
+  const duration = workout.durationSeconds ? formatDurationShort(workout.durationSeconds) : null;
+  const calories = workout.caloriesBurned || null;
 
   const capture = async () => {
     try {
       return await captureRef(cardRef, { format: 'png', quality: 1, result: 'tmpfile' });
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Could not capture card.');
       return null;
     }
@@ -201,7 +200,10 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
   const pickFromGallery = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') return Alert.alert('Permission needed');
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.85 });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false, quality: 0.85,
+    });
     if (!result.canceled) setPhotoUri(result.assets[0].uri);
   };
 
@@ -213,14 +215,20 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
         workoutType: workout.type,
         streak,
         date: workout.date || format(new Date(), 'yyyy-MM-dd'),
+        durationSeconds: workout.durationSeconds || 0,
+        caloriesBurned: workout.caloriesBurned || 0,
+        caption: caption.trim(),
+        exercises: workout.exercises || [],
       });
       Alert.alert('Posted! 🔥', 'Your workout is live on the community feed!', [
         { text: 'View Feed', onPress: () => { onClose(); navigation?.navigate('Feed'); } },
         { text: 'OK', onPress: onClose },
       ]);
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Could not post. Try again.');
-    } finally { setPosting(false); }
+    } finally {
+      setPosting(false);
+    }
   };
 
   if (cameraOpen) {
@@ -233,11 +241,31 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
   }
 
   return (
-    <View style={styles.root}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
       <View style={styles.handle} />
       <Text style={styles.title}>Share Your Workout</Text>
-      <Text style={styles.sub}>Add a photo or share the card 🔥</Text>
+      <Text style={styles.sub}>Add a photo or share the card directly 🔥</Text>
+
+      {/* Workout stats summary */}
+      {(duration || calories) && (
+        <View style={styles.statsSummary}>
+          <Text style={styles.workoutTypeLabel}>{workout.type}</Text>
+          <View style={styles.statsChips}>
+            {duration && (
+              <View style={styles.statsChip}>
+                <Ionicons name="time-outline" size={14} color="#00f5c4" />
+                <Text style={styles.statsChipText}>{duration}</Text>
+              </View>
+            )}
+            {calories && (
+              <View style={styles.statsChip}>
+                <Ionicons name="flame-outline" size={14} color="#ff9f43" />
+                <Text style={[styles.statsChipText, { color: '#ff9f43' }]}>{calories} cal</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Card preview */}
       <View style={styles.cardWrap}>
@@ -247,7 +275,6 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
             photoUri={photoUri}
             workout={workout}
             streak={streak}
-            userName={userName}
           />
         ) : (
           <StandaloneCard
@@ -262,19 +289,33 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
       {/* Photo options */}
       <View style={styles.photoOptions}>
         <TouchableOpacity style={styles.photoBtn} onPress={() => setCameraOpen(true)}>
-          <Ionicons name="camera-outline" size={16} color="#00f5c4" />
+          <Ionicons name="camera-outline" size={18} color="#00f5c4" />
           <Text style={styles.photoBtnText}>{photoUri ? 'Retake' : 'Selfie'}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.photoBtn} onPress={pickFromGallery}>
-          <Ionicons name="image-outline" size={16} color="#ff9f43" />
+          <Ionicons name="image-outline" size={18} color="#ff9f43" />
           <Text style={[styles.photoBtnText, { color: '#ff9f43' }]}>{photoUri ? 'Change' : 'Gallery'}</Text>
         </TouchableOpacity>
         {photoUri && (
           <TouchableOpacity style={styles.photoBtn} onPress={() => setPhotoUri(null)}>
-            <Ionicons name="close-outline" size={16} color="#ff6b6b" />
+            <Ionicons name="close-outline" size={18} color="#ff6b6b" />
             <Text style={[styles.photoBtnText, { color: '#ff6b6b' }]}>Remove</Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* Caption */}
+      <View style={styles.captionWrap}>
+        <TextInput
+          style={styles.captionInput}
+          placeholder="Add a caption... 💪"
+          placeholderTextColor="#3a4560"
+          value={caption}
+          onChangeText={setCaption}
+          multiline
+          maxLength={200}
+        />
+        <Text style={styles.captionCount}>{caption.length}/200</Text>
       </View>
 
       {/* Share actions */}
@@ -285,21 +326,18 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
           </View>
           <Text style={styles.actionLabel}>Save</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <View style={[styles.actionIcon, { backgroundColor: 'rgba(37,211,102,0.15)' }]}>
             <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
           </View>
           <Text style={styles.actionLabel}>WhatsApp</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <View style={[styles.actionIcon, { backgroundColor: 'rgba(225,48,108,0.15)' }]}>
             <Ionicons name="logo-instagram" size={22} color="#E1306C" />
           </View>
           <Text style={styles.actionLabel}>Instagram</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <View style={[styles.actionIcon, { backgroundColor: 'rgba(255,159,67,0.15)' }]}>
             <Ionicons name="share-outline" size={22} color="#ff9f43" />
@@ -320,84 +358,52 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
       <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
         <Text style={styles.closeBtnText}>Done</Text>
       </TouchableOpacity>
-      </ScrollView>
-    </View>
+      <View style={{ height: 32 }} />
+    </ScrollView>
   );
 }
 
 // ─── Overlay styles ───────────────────────────────────────────────────────────
 const overlay = StyleSheet.create({
-  root: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'space-between' },
-  topBar: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 16, paddingTop: 20,
-  },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoIcon: { fontSize: 22 },
-  brandName: { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: 3 },
-  streakBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20,
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderWidth: 1, borderColor: 'rgba(0,245,196,0.4)',
-  },
-  streakFire: { fontSize: 16 },
-  streakNum: { color: '#00f5c4', fontSize: 18, fontWeight: '800' },
-  bottomBar: {
-    padding: 20, paddingBottom: 24,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,245,196,0.15)',
-  },
-  workoutType: {
-    color: '#00f5c4', fontSize: 36, fontWeight: '800',
-    letterSpacing: 1, textTransform: 'uppercase',
-  },
-  userName: { color: '#fff', fontSize: 16, fontWeight: '700', marginTop: 2 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
-  metaText: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
-  metaDot: { color: 'rgba(255,255,255,0.4)', fontSize: 11 },
-  watermark: { color: 'rgba(255,255,255,0.3)', fontSize: 10, marginTop: 6, letterSpacing: 1.5 },
+  root: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'space-between', padding: 16 },
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  brand: { fontSize: 16, fontWeight: '900', color: '#fff', letterSpacing: 4 },
+  brandAccent: { color: '#00f5c4' },
+  streakPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(0,245,196,0.35)' },
+  streakNum: { color: '#00f5c4', fontSize: 13, fontWeight: '800' },
+  streakLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' },
+  pill: { backgroundColor: 'rgba(8,11,16,0.55)', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(0,245,196,0.18)' },
+  workoutType: { color: '#fff', fontSize: 22, fontWeight: '900', letterSpacing: 2, marginBottom: 6 },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stat: { color: 'rgba(255,255,255,0.82)', fontSize: 13, fontWeight: '700' },
+  dot: { color: 'rgba(0,245,196,0.6)', fontSize: 13, fontWeight: '900' },
 });
 
 // ─── Standalone card styles ───────────────────────────────────────────────────
 const card = StyleSheet.create({
-  root: {
-    width: 320, height: 420,
-    backgroundColor: '#080b10',
-    borderRadius: 20, borderWidth: 1.5, borderColor: '#1e2535',
-    padding: 24, overflow: 'hidden', position: 'relative',
-  },
-  accentLine: { position: 'absolute', top: 0, left: 24, right: 24, height: 2, backgroundColor: '#00f5c4', borderRadius: 1 },
-  cornerTL: { position: 'absolute', top: 14, left: 14, width: 18, height: 18, borderTopWidth: 2, borderLeftWidth: 2, borderColor: '#00f5c4', borderRadius: 3, opacity: 0.5 },
-  cornerBR: { position: 'absolute', bottom: 14, right: 14, width: 18, height: 18, borderBottomWidth: 2, borderRightWidth: 2, borderColor: '#00f5c4', borderRadius: 3, opacity: 0.5 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
-  logoWrap: { width: 36, height: 36, borderRadius: 9, backgroundColor: 'rgba(0,245,196,0.12)', borderWidth: 1, borderColor: 'rgba(0,245,196,0.3)', alignItems: 'center', justifyContent: 'center' },
-  logoIcon: { fontSize: 18 },
-  brandName: { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: 3 },
-  brandTagline: { color: '#4a5568', fontSize: 10, marginTop: 1 },
-  streakBadge: { marginLeft: 'auto', alignItems: 'center', backgroundColor: 'rgba(0,245,196,0.08)', borderWidth: 1, borderColor: 'rgba(0,245,196,0.2)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
-  streakFire: { fontSize: 16 },
-  streakNum: { color: '#00f5c4', fontSize: 20, fontWeight: '800', lineHeight: 24 },
-  streakLabel: { color: '#4a5568', fontSize: 9, fontWeight: '600', letterSpacing: 1 },
-  divider: { height: 1, backgroundColor: '#1e2535', marginVertical: 16 },
-  body: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 4 },
-  userName: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  completedText: { color: '#6b7a99', fontSize: 13 },
-  workoutType: { color: '#00f5c4', fontSize: 38, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
-  metaRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
-  metaChip: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: '#1e2535', borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6 },
-  metaText: { color: '#8892a4', fontSize: 10, fontWeight: '600', flex: 1 },
-  footer: { marginTop: 12, alignItems: 'center' },
-  footerText: { color: '#2a3550', fontSize: 9, fontWeight: '600', letterSpacing: 1.5 },
+  root: { width: 320, backgroundColor: '#080b10', borderRadius: 24, borderWidth: 1, borderColor: '#1a2235', paddingHorizontal: 24, paddingTop: 0, paddingBottom: 24, overflow: 'hidden' },
+  accentBar: { height: 3, backgroundColor: '#00f5c4', marginBottom: 24, borderRadius: 0 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  brand: { fontSize: 17, fontWeight: '900', color: '#fff', letterSpacing: 4 },
+  brandAccent: { color: '#00f5c4' },
+  streakPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,245,196,0.08)', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(0,245,196,0.25)' },
+  streakNum: { color: '#00f5c4', fontSize: 13, fontWeight: '800' },
+  streakSuffix: { color: '#4a6080', fontSize: 12, fontWeight: '600' },
+  workoutType: { color: '#fff', fontSize: 34, fontWeight: '900', letterSpacing: 1.5, lineHeight: 38, marginBottom: 4 },
+  userName: { color: '#4a6080', fontSize: 13, fontWeight: '600', marginBottom: 20, letterSpacing: 0.5 },
+  divider: { height: 1, backgroundColor: '#1a2235', marginBottom: 20 },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 0 },
+  statBlock: { flex: 1 },
+  statValue: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  statLabel: { color: '#3a4560', fontSize: 10, fontWeight: '700', letterSpacing: 1.5, marginTop: 3 },
+  statSep: { width: 1, height: 36, backgroundColor: '#1a2235', marginHorizontal: 16 },
+  footer: { color: '#1e2d45', fontSize: 10, fontWeight: '700', letterSpacing: 2, marginTop: 24, textAlign: 'center' },
 });
 
 // ─── Photo card styles ────────────────────────────────────────────────────────
 const photo = StyleSheet.create({
-  root: { width: 300, height: 380, borderRadius: 20, overflow: 'hidden', position: 'relative' },
+  root: { width: 340, height: 540, borderRadius: 24, overflow: 'hidden', position: 'relative' },
   image: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
-  gradTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 120, backgroundColor: 'transparent', backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)' },
-  gradBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 160, backgroundColor: 'rgba(0,0,0,0.55)' },
 });
 
 // ─── Camera styles ────────────────────────────────────────────────────────────
@@ -417,21 +423,32 @@ const cam = StyleSheet.create({
 
 // ─── Sheet styles ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0e1219', padding: 24, paddingTop: 16 },
+  root: { flex: 1, backgroundColor: '#0e1219' },
+  scroll: { padding: 24, paddingTop: 16 },
   handle: { width: 36, height: 4, backgroundColor: '#2a3550', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   title: { fontSize: 22, fontWeight: '800', color: '#fff', textAlign: 'center' },
-  sub: { color: '#6b7a99', fontSize: 14, textAlign: 'center', marginTop: 4, marginBottom: 20 },
+  sub: { color: '#6b7a99', fontSize: 14, textAlign: 'center', marginTop: 4, marginBottom: 16 },
+
+  statsSummary: { backgroundColor: '#131822', borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#1e2535' },
+  workoutTypeLabel: { color: '#fff', fontWeight: '800', fontSize: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
+  statsChips: { flexDirection: 'row', gap: 10 },
+  statsChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,245,196,0.08)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: 'rgba(0,245,196,0.2)' },
+  statsChipText: { color: '#00f5c4', fontWeight: '700', fontSize: 14 },
+
   cardWrap: { alignItems: 'center', marginBottom: 16 },
-  photoOptions: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 20 },
+  photoOptions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginBottom: 20 },
   photoBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9, borderWidth: 1, borderColor: '#1e2535' },
   photoBtnText: { color: '#00f5c4', fontWeight: '600', fontSize: 13 },
-  actions: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginBottom: 20 },
+  actions: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginBottom: 20 },
   actionBtn: { alignItems: 'center', gap: 8 },
   actionIcon: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   actionLabel: { color: '#8892a4', fontSize: 12, fontWeight: '600' },
-  closeBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, height: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#1e2535' },
-  closeBtnText: { color: '#6b7a99', fontWeight: '700', fontSize: 15 },
   postToAppBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(0,245,196,0.12)', borderRadius: 14, height: 52, borderWidth: 1.5, borderColor: '#00f5c4', marginBottom: 12 },
   postToAppIcon: { fontSize: 18 },
   postToAppText: { color: '#00f5c4', fontWeight: '800', fontSize: 15 },
+  closeBtn: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, height: 50, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#1e2535' },
+  closeBtnText: { color: '#6b7a99', fontWeight: '700', fontSize: 15 },
+  captionWrap: { backgroundColor: '#131822', borderRadius: 14, borderWidth: 1, borderColor: '#1e2535', padding: 14, marginBottom: 20 },
+  captionInput: { color: '#ffffff', fontSize: 15, fontWeight: '500', minHeight: 60, textAlignVertical: 'top', lineHeight: 22 },
+  captionCount: { color: '#3a4560', fontSize: 11, fontWeight: '600', textAlign: 'right', marginTop: 6 },
 });
