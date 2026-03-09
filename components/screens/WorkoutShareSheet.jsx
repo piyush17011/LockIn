@@ -293,6 +293,13 @@ export default function WorkoutShareSheet({ workout, streak, userName, userId, o
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
+          <View style={[styles.actionIcon, { backgroundColor: 'rgba(225,48,108,0.15)' }]}>
+            <Ionicons name="logo-instagram" size={22} color="#E1306C" />
+          </View>
+          <Text style={styles.actionLabel}>Instagram</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <View style={[styles.actionIcon, { backgroundColor: 'rgba(255,159,67,0.15)' }]}>
             <Ionicons name="share-outline" size={22} color="#ff9f43" />
           </View>
@@ -385,7 +392,7 @@ const card = StyleSheet.create({
 
 // ─── Photo card styles ────────────────────────────────────────────────────────
 const photo = StyleSheet.create({
-  root: { width: 340, height: 460, borderRadius: 20, overflow: 'hidden', position: 'relative' },
+  root: { width: 360, height: 580, borderRadius: 20, overflow: 'hidden', position: 'relative' },
   image: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
   gradTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 120, backgroundColor: 'transparent', backgroundImage: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)' },
   gradBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 160, backgroundColor: 'rgba(0,0,0,0.55)' },

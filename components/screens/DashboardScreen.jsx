@@ -70,13 +70,25 @@ export default function DashboardScreen({ navigation }) {
         <Animated.View entering={FadeInDown.duration(500)} style={styles.header}>
           <LinearGradient colors={['rgba(0,245,196,0.1)', 'transparent']} style={styles.headerGrad} />
           <View style={styles.headerTop}>
-            <View>
-              <Text style={styles.greeting}>Good {getTimeOfDay()},</Text>
-              <Text style={styles.name}>{userData?.displayName || user?.displayName || 'Athlete'} 👋</Text>
-            </View>
-            <TouchableOpacity onPress={() => logoutUser()} style={styles.logoutBtn}>
-              <Ionicons name="log-out-outline" size={22} color={Colors.muted} />
+            <TouchableOpacity onPress={() => navigation.navigate('UserProfile')} style={styles.profileBtn}>
+              <View style={styles.profileAvatar}>
+                <Text style={styles.profileAvatarText}>
+                  {(userData?.displayName || user?.displayName || 'A')[0].toUpperCase()}
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.greeting}>Good {getTimeOfDay()},</Text>
+                <Text style={styles.name}>{userData?.displayName || user?.displayName || 'Athlete'} 👋</Text>
+              </View>
             </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={() => navigation.navigate('Feed')} style={styles.iconBtn}>
+                <Ionicons name="people-outline" size={22} color={Colors.accent} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => logoutUser()} style={styles.iconBtn}>
+                <Ionicons name="log-out-outline" size={22} color={Colors.muted} />
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.quoteCard}>
             <Text style={styles.quoteText}>"{quote.text}"</Text>
@@ -135,7 +147,7 @@ export default function DashboardScreen({ navigation }) {
                       {worked && <Ionicons name="checkmark" size={12} color={Colors.bg} />}
                     </View>
                     <Text style={[styles.dayDate, worked && { color: Colors.accent }]}>
-                      {wType ? wType.slice(0, 3) : format(day, 'd')}
+                      {wType ? wType.slice(0, 5) : format(day, 'd')}
                     </Text>
                   </View>
                 );
@@ -276,9 +288,14 @@ const styles = StyleSheet.create({
   header: { marginBottom: Spacing.lg },
   headerGrad: { position: 'absolute', top: -60, left: -20, right: -20, height: 250 },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.md },
-  greeting: { color: Colors.muted, fontSize: 14 },
-  name: { color: Colors.text, fontSize: 24, fontWeight: '800', marginTop: 2 },
+  greeting: { color: Colors.muted, fontSize: 13 },
+  name: { color: Colors.text, fontSize: 20, fontWeight: '800', marginTop: 1 },
   logoutBtn: { padding: 8, backgroundColor: Colors.surface, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border },
+  headerActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  iconBtn: { padding: 8, backgroundColor: Colors.surface, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border },
+  profileBtn: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  profileAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(0,245,196,0.12)', borderWidth: 1.5, borderColor: 'rgba(0,245,196,0.35)', alignItems: 'center', justifyContent: 'center' },
+  profileAvatarText: { color: Colors.accent, fontWeight: '800', fontSize: 18 },
   quoteCard: { backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderLeftWidth: 3, borderLeftColor: Colors.accent },
   quoteText: { color: Colors.textSub, fontSize: 13, fontStyle: 'italic', lineHeight: 20 },
   quoteAuthor: { color: Colors.muted, fontSize: 12, marginTop: 6 },
@@ -301,7 +318,7 @@ const styles = StyleSheet.create({
   dayLabel: { color: Colors.muted, fontSize: 12, fontWeight: '600' },
   dayDot: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
   dayDotFilled: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  dayDate: { color: Colors.muted, fontSize: 10, fontWeight: '600' },
+  dayDate: { color: Colors.muted, fontSize: 9, fontWeight: '600' },
   sectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700', marginBottom: Spacing.md },
   actionGrid: { gap: Spacing.sm, marginBottom: Spacing.lg },
   actionCard: { backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.border },

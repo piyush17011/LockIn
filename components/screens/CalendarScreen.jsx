@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, FlatList } from 'react-native';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal, FlatList, BackHandler } from 'react-native';
 import { Calendar } from 'react-native-calendars';
 import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
+import WorkoutShareSheet from './WorkoutShareSheet';
 import { useWorkoutsContext } from '../../hooks/WorkoutsContext';
 import { logWorkout, deleteWorkout, markRestDay } from '../../services/workoutService';
 import { WORKOUT_TYPES, PRESET_EXERCISES } from '../../constants/exercises';
@@ -24,6 +25,16 @@ const DAY_COLORS = {
 function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose }) {
   const [search, setSearch] = useState('');
   const [customName, setCustomName] = useState('');
+
+  // Handle Android hardware back button
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onClose]);
   const presets = PRESET_EXERCISES[workoutType] || [];
   const filtered = presets.filter((e) =>
     e.name.toLowerCase().includes(search.toLowerCase())
@@ -99,13 +110,14 @@ function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose
 }
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
-export default function CalendarScreen() {
-  const { user } = useAuth();
+export default function CalendarScreen({ navigation }) {
+  const { user, userData } = useAuth();
   const { workouts, restDays, refresh, addWorkoutLocally, removeWorkoutLocally, updateWorkoutLocally, addRestDayLocally } = useWorkoutsContext();
 
   const [selected, setSelected] = useState(TODAY);
   const [logModalVisible, setLogModalVisible] = useState(false);
-  const [editingWorkout, setEditingWorkout] = useState(null); // null = new, object = editing
+  const [editingWorkout, setEditingWorkout] = useState(null);
+  const [shareWorkout, setShareWorkout] = useState(null); // null = new, object = editing
   const DRAFT_KEY = user?.uid ? `workout_draft_${user.uid}` : null;
   const [pickerVisible, setPickerVisible] = useState(false);
   const [workoutType, setWorkoutType] = useState('Push');
@@ -438,9 +450,17 @@ export default function CalendarScreen() {
               <Animated.View key={w.id} entering={FadeIn.duration(300)} style={styles.workoutCard}>
                 <View style={styles.workoutCardHeader}>
                   <View style={styles.typeBadge}><Text style={styles.typeBadgeText}>{w.type}</Text></View>
-                  <TouchableOpacity onPress={() => handleDelete(w.id)}>
-                    <Ionicons name="trash-outline" size={18} color={Colors.red} />
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => setShareWorkout(w)}>
+                      <Ionicons name="share-social-outline" size={18} color={Colors.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => openEditModal(w)}>
+                      <Ionicons name="create-outline" size={18} color={'#54a0ff'} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDelete(w.id)}>
+                      <Ionicons name="trash-outline" size={18} color={Colors.red} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 {w.exercises?.map((ex, i) => {
                   const repsArr = ex.reps ? ex.reps.toString().split('/') : [];
@@ -472,6 +492,24 @@ export default function CalendarScreen() {
         </Animated.View>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal
+        visible={!!shareWorkout}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShareWorkout(null)}
+      >
+        {shareWorkout && (
+          <WorkoutShareSheet
+            workout={shareWorkout}
+            streak={userData?.streak || 0}
+            userName={userData?.displayName || user?.displayName || 'Athlete'}
+            userId={user?.uid}
+            navigation={navigation}
+            onClose={() => setShareWorkout(null)}
+          />
+        )}
+      </Modal>
 
       <ExercisePicker
         visible={pickerVisible}
@@ -592,21 +630,29 @@ export default function CalendarScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const pick = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg, padding: Spacing.lg, paddingTop: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
-  title: { fontSize: 22, fontWeight: '800', color: Colors.text },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, height: 44, marginBottom: Spacing.md },
+  root: { flex: 1, backgroundColor: Colors.bg, paddingTop: 16 },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg, paddingVertical: 12,
+    borderBottomWidth: 1, borderColor: Colors.border,
+    marginBottom: Spacing.sm,
+  },
+  backBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 18, fontWeight: '800', color: Colors.text },
+  doneBtn: { backgroundColor: Colors.accent, borderRadius: Radius.full, paddingHorizontal: 16, paddingVertical: 7 },
+  doneBtnText: { color: Colors.bg, fontWeight: '800', fontSize: 13 },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, height: 44, marginBottom: Spacing.sm, marginHorizontal: Spacing.lg },
   searchInput: { flex: 1, color: Colors.text, fontSize: 14 },
-  exRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
+  exRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border, marginHorizontal: Spacing.lg },
   exRowSelected: { borderColor: Colors.accent, backgroundColor: 'rgba(0,245,196,0.07)' },
-  exEmoji: { fontSize: 28, marginRight: Spacing.md },
+  exEmoji: { fontSize: 26, marginRight: Spacing.md },
   exInfo: { flex: 1 },
   exName: { color: Colors.text, fontWeight: '600', fontSize: 15 },
   exMuscle: { color: Colors.muted, fontSize: 12, marginTop: 2 },
-  checkCircle: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
+  checkCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
   checkCircleActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  emptyText: { color: Colors.muted, textAlign: 'center', paddingVertical: 20, fontSize: 14 },
-  customSection: { marginTop: Spacing.lg, marginBottom: Spacing.xl },
+  emptyText: { color: Colors.muted, textAlign: 'center', paddingVertical: 24, fontSize: 14 },
+  customSection: { marginTop: Spacing.lg, marginBottom: Spacing.xl, marginHorizontal: Spacing.lg },
   customLabel: { color: Colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: Spacing.sm },
   customRow: { flexDirection: 'row', gap: Spacing.sm },
   customInput: { flex: 1, backgroundColor: Colors.card, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, color: Colors.text, height: 48, fontSize: 14 },
