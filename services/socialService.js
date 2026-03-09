@@ -4,17 +4,25 @@ import {
   where, arrayUnion, arrayRemove, serverTimestamp,
   increment, setDoc,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebase';
+import { db } from './firebase';
 
-// ── Upload image to Firebase Storage ─────────────────────────────────────────
+// ── Upload image to Cloudinary ────────────────────────────────────────────────
+const CLOUDINARY_CLOUD = 'dkrk88irr';
+const CLOUDINARY_PRESET = 'lockin';
+
 export async function uploadPostImage(userId, localUri) {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
-  const path = `posts/${userId}/${Date.now()}.jpg`;
-  const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, blob);
-  return await getDownloadURL(storageRef);
+  const formData = new FormData();
+  formData.append('file', { uri: localUri, type: 'image/jpeg', name: `post_${userId}_${Date.now()}.jpg` });
+  formData.append('upload_preset', CLOUDINARY_PRESET);
+  formData.append('folder', `posts/${userId}`);
+
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
+    { method: 'POST', body: formData }
+  );
+  const data = await res.json();
+  if (!data.secure_url) throw new Error(data.error?.message || 'Cloudinary upload failed');
+  return data.secure_url;
 }
 
 // ── Create a post ─────────────────────────────────────────────────────────────
