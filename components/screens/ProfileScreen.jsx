@@ -1,51 +1,82 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, FlatList, ActivityIndicator, Alert, TextInput, Modal, Pressable,
+  View, Text, ScrollView, TouchableOpacity,
+  Image, FlatList, ActivityIndicator, Alert, TextInput, Modal,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
-import { getUserPosts, searchUsers, followUser, unfollowUser, isFollowing, getFollowers, getFollowing, deletePost, getFollowerCount } from '../../services/socialService';
-import { Colors, Spacing, Radius } from '../../constants/theme';
+import {
+  getUserPosts, searchUsers, followUser, unfollowUser,
+  isFollowing, getFollowers, getFollowing, deletePost, getFollowerCount,
+} from '../../services/socialService';
+import { useTheme } from '../../hooks/ThemeContext';
 
-// ─── Followers / Following Modal ─────────────────────────────────────────────
-function FollowListModal({ visible, onClose, title, users, currentUserId, onUnfollow, showUnfollow }) {
+const shadow = (color = '#000', opacity = 0.07, radius = 10, y = 3) => ({
+  shadowColor: color, shadowOffset: { width: 0, height: y },
+  shadowOpacity: opacity, shadowRadius: radius, elevation: Math.round(radius / 2),
+});
+
+// ── Followers / Following Modal ───────────────────────────────────────────────
+function FollowListModal({ visible, onClose, title, users, currentUserId, onUnfollow, showUnfollow, C, ff }) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={fl.root}>
-        <View style={fl.header}>
-          <Text style={fl.title}>{title}</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color={Colors.text} />
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <View style={{
+          flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+          paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+          borderBottomWidth: 1, borderBottomColor: C.border,
+        }}>
+          <Text style={[{ fontSize: 20, color: C.text }, ff.display]}>{title}</Text>
+          <TouchableOpacity onPress={onClose} style={{
+            width: 34, height: 34, borderRadius: 17,
+            backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Ionicons name="close" size={18} color={C.textSub} />
           </TouchableOpacity>
         </View>
+
         {users.length === 0 ? (
-          <View style={fl.empty}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <Text style={{ fontSize: 36 }}>👥</Text>
-            <Text style={fl.emptyText}>Nobody here yet</Text>
+            <Text style={[{ fontSize: 15, color: C.textSub }, ff.body]}>Nobody here yet</Text>
           </View>
         ) : (
           <FlatList
             data={users}
-            keyExtractor={(u) => u.id}
-            contentContainerStyle={{ padding: Spacing.lg }}
+            keyExtractor={u => u.id}
+            contentContainerStyle={{ padding: 20, gap: 10 }}
             renderItem={({ item }) => (
-              <View style={fl.userRow}>
-                <View style={fl.avatar}>
-                  <Text style={fl.avatarText}>{item.displayName?.[0]?.toUpperCase() || '?'}</Text>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                backgroundColor: C.card, borderRadius: 16,
+                padding: 14, borderWidth: 1, borderColor: C.border,
+              }}>
+                <View style={{
+                  width: 46, height: 46, borderRadius: 23,
+                  backgroundColor: C.accent + '18',
+                  borderWidth: 1.5, borderColor: C.accent + '40',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Text style={[{ color: C.accent, fontSize: 18 }, ff.display]}>
+                    {item.displayName?.[0]?.toUpperCase() || '?'}
+                  </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={fl.userName}>{item.displayName || 'Unknown'}</Text>
-                  <Text style={fl.userSub}>🔥 {item.streak || 0} streak</Text>
+                  <Text style={[{ fontSize: 15, color: C.text }, ff.heading]}>{item.displayName || 'Unknown'}</Text>
+                  <Text style={[{ fontSize: 12, color: C.textSub, marginTop: 2 }, ff.body]}>🔥 {item.streak || 0} day streak</Text>
                 </View>
                 {showUnfollow && item.id !== currentUserId && (
                   <TouchableOpacity
-                    style={fl.unfollowBtn}
                     onPress={() => onUnfollow(item.id)}
+                    style={{
+                      backgroundColor: C.surface, borderRadius: 20,
+                      paddingHorizontal: 14, paddingVertical: 7,
+                      borderWidth: 1, borderColor: C.border,
+                    }}
                   >
-                    <Text style={fl.unfollowText}>Unfollow</Text>
+                    <Text style={[{ fontSize: 13, color: C.textSub }, ff.heading]}>Unfollow</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -57,56 +88,68 @@ function FollowListModal({ visible, onClose, title, users, currentUserId, onUnfo
   );
 }
 
-// ─── User Search Modal ────────────────────────────────────────────────────────
-function SearchModal({ visible, onClose, currentUserId }) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [searching, setSearching] = useState(false);
+// ── Search Modal ──────────────────────────────────────────────────────────────
+function SearchModal({ visible, onClose, currentUserId, C, ff }) {
+  const [query,        setQuery]        = useState('');
+  const [results,      setResults]      = useState([]);
+  const [searching,    setSearching]    = useState(false);
   const [followStates, setFollowStates] = useState({});
 
   const handleSearch = async () => {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const users = await searchUsers(query.trim());
-      const filtered = users.filter((u) => u.id !== currentUserId);
+      const users    = await searchUsers(query.trim());
+      const filtered = users.filter(u => u.id !== currentUserId);
       setResults(filtered);
       const states = {};
-      await Promise.all(filtered.map(async (u) => {
-        states[u.id] = await isFollowing(currentUserId, u.id);
-      }));
+      await Promise.all(filtered.map(async u => { states[u.id] = await isFollowing(currentUserId, u.id); }));
       setFollowStates(states);
     } finally { setSearching(false); }
   };
 
   const handleFollow = async (userId) => {
     const currently = followStates[userId];
-    setFollowStates((prev) => ({ ...prev, [userId]: !currently }));
+    setFollowStates(prev => ({ ...prev, [userId]: !currently }));
     try {
       if (currently) await unfollowUser(currentUserId, userId);
       else await followUser(currentUserId, userId);
     } catch {
-      setFollowStates((prev) => ({ ...prev, [userId]: currently }));
+      setFollowStates(prev => ({ ...prev, [userId]: currently }));
       Alert.alert('Error', 'Could not update follow status.');
     }
   };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={sm.root}>
-        <View style={sm.header}>
-          <Text style={sm.title}>Find People</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color={Colors.text} />
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <View style={{
+          flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+          paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+          borderBottomWidth: 1, borderBottomColor: C.border,
+        }}>
+          <Text style={[{ fontSize: 20, color: C.text }, ff.display]}>Find People</Text>
+          <TouchableOpacity onPress={onClose} style={{
+            width: 34, height: 34, borderRadius: 17,
+            backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Ionicons name="close" size={18} color={C.textSub} />
           </TouchableOpacity>
         </View>
-        <View style={sm.searchRow}>
-          <View style={sm.searchWrap}>
-            <Ionicons name="search-outline" size={16} color={Colors.muted} style={{ marginRight: 8 }} />
+
+        {/* Search bar */}
+        <View style={{ flexDirection: 'row', padding: 20, gap: 10 }}>
+          <View style={{
+            flex: 1, flexDirection: 'row', alignItems: 'center',
+            backgroundColor: C.card, borderRadius: 14,
+            borderWidth: 1, borderColor: C.border,
+            paddingHorizontal: 14, height: 48,
+          }}>
+            <Ionicons name="search-outline" size={16} color={C.textSub} style={{ marginRight: 8 }} />
             <TextInput
-              style={sm.input}
+              style={[{ flex: 1, color: C.text, fontSize: 15 }, ff.body]}
               placeholder="Search by name..."
-              placeholderTextColor={Colors.muted}
+              placeholderTextColor={C.textSub}
               value={query}
               onChangeText={setQuery}
               onSubmitEditing={handleSearch}
@@ -114,35 +157,60 @@ function SearchModal({ visible, onClose, currentUserId }) {
               autoFocus
             />
           </View>
-          <TouchableOpacity style={sm.searchBtn} onPress={handleSearch}>
-            <Text style={sm.searchBtnText}>Search</Text>
+          <TouchableOpacity
+            onPress={handleSearch}
+            style={{
+              backgroundColor: C.accent, borderRadius: 14,
+              paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', height: 48,
+            }}
+          >
+            <Text style={[{ color: C.bg, fontSize: 14 }, ff.heading]}>Search</Text>
           </TouchableOpacity>
         </View>
 
         {searching ? (
-          <ActivityIndicator color={Colors.accent} style={{ marginTop: 40 }} />
+          <ActivityIndicator color={C.accent} style={{ marginTop: 40 }} />
         ) : (
           <FlatList
             data={results}
-            keyExtractor={(u) => u.id}
-            contentContainerStyle={{ padding: Spacing.lg }}
-            ListEmptyComponent={
-              query ? <Text style={sm.emptyText}>No users found</Text> : null
-            }
+            keyExtractor={u => u.id}
+            contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
+            ListEmptyComponent={query ? (
+              <Text style={[{ color: C.textSub, textAlign: 'center', paddingTop: 30 }, ff.body]}>No users found</Text>
+            ) : null}
             renderItem={({ item }) => (
-              <View style={sm.userRow}>
-                <View style={sm.avatar}>
-                  <Text style={sm.avatarText}>{item.displayName?.[0]?.toUpperCase() || '?'}</Text>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                backgroundColor: C.card, borderRadius: 16,
+                padding: 14, borderWidth: 1, borderColor: C.border,
+              }}>
+                <View style={{
+                  width: 46, height: 46, borderRadius: 23,
+                  backgroundColor: C.accent + '18',
+                  borderWidth: 1.5, borderColor: C.accent + '40',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Text style={[{ color: C.accent, fontSize: 18 }, ff.display]}>
+                    {item.displayName?.[0]?.toUpperCase() || '?'}
+                  </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={sm.userName}>{item.displayName}</Text>
-                  <Text style={sm.userSub}>🔥 {item.streak || 0} streak</Text>
+                  <Text style={[{ fontSize: 15, color: C.text }, ff.heading]}>{item.displayName}</Text>
+                  <Text style={[{ fontSize: 12, color: C.textSub, marginTop: 2 }, ff.body]}>🔥 {item.streak || 0} day streak</Text>
                 </View>
                 <TouchableOpacity
-                  style={[sm.followBtn, followStates[item.id] && sm.followingBtn]}
                   onPress={() => handleFollow(item.id)}
+                  style={{
+                    backgroundColor: followStates[item.id] ? C.surface : C.accent,
+                    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8,
+                    borderWidth: followStates[item.id] ? 1 : 0,
+                    borderColor: C.border,
+                  }}
                 >
-                  <Text style={[sm.followBtnText, followStates[item.id] && { color: Colors.muted }]}>
+                  <Text style={[{
+                    fontSize: 13,
+                    color: followStates[item.id] ? C.textSub : C.bg,
+                  }, ff.heading]}>
                     {followStates[item.id] ? 'Following' : 'Follow'}
                   </Text>
                 </TouchableOpacity>
@@ -155,194 +223,324 @@ function SearchModal({ visible, onClose, currentUserId }) {
   );
 }
 
-// ─── Post Grid Item ───────────────────────────────────────────────────────────
-function PostGridItem({ post, onDelete }) {
+// ── Post Grid Item ────────────────────────────────────────────────────────────
+function PostGridItem({ post, onDelete, C, ff, size }) {
   return (
-    <View style={styles.gridItem}>
+    <View style={{ width: size, height: size, borderRadius: 14, overflow: 'hidden', position: 'relative' }}>
       {post.imageUrl ? (
-        <Image source={{ uri: post.imageUrl }} style={styles.gridImage} resizeMode="cover" />
+        <Image source={{ uri: post.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
       ) : (
-        <View style={styles.gridPlaceholder}>
-          <Text style={styles.gridPlaceholderText}>{post.workoutType}</Text>
+        <View style={{
+          width: '100%', height: '100%',
+          backgroundColor: C.card,
+          alignItems: 'center', justifyContent: 'center',
+          borderWidth: 1, borderColor: C.border,
+        }}>
+          <Text style={{ fontSize: 20 }}>🏋️</Text>
+          <Text style={[{ fontSize: 10, color: C.accent, marginTop: 4, textAlign: 'center', paddingHorizontal: 4 }, ff.heading]}>
+            {post.workoutType}
+          </Text>
         </View>
       )}
-      <View style={styles.gridOverlay}>
-        <Ionicons name="heart" size={12} color="#fff" />
-        <Text style={styles.gridLikes}>{(post.likes || []).length}</Text>
+      {/* likes badge */}
+      <View style={{
+        position: 'absolute', bottom: 6, right: 6,
+        flexDirection: 'row', alignItems: 'center', gap: 3,
+        backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 8,
+        paddingHorizontal: 6, paddingVertical: 3,
+      }}>
+        <Ionicons name="heart" size={10} color="#fff" />
+        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>{(post.likes || []).length}</Text>
       </View>
       {onDelete && (
-        <TouchableOpacity style={styles.gridDeleteBtn} onPress={() => onDelete(post.id)}>
-          <Ionicons name="trash-outline" size={13} color="#fff" />
+        <TouchableOpacity
+          onPress={() => onDelete(post.id)}
+          style={{
+            position: 'absolute', top: 6, right: 6,
+            width: 26, height: 26, borderRadius: 13,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Ionicons name="trash-outline" size={12} color="#fff" />
         </TouchableOpacity>
       )}
     </View>
   );
 }
 
-// ─── Profile Screen ───────────────────────────────────────────────────────────
+// ── Main Screen ───────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
+  const { scheme: C, font: F } = useTheme();
+  const ff = {
+    display:  { fontFamily: F.display },
+    heading:  { fontFamily: F.heading },
+    body:     { fontFamily: F.body },
+  };
+
   const { user, userData } = useAuth();
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchVisible, setSearchVisible] = useState(false);
+  const [posts,            setPosts]            = useState([]);
+  const [loading,          setLoading]          = useState(true);
+  const [searchVisible,    setSearchVisible]    = useState(false);
   const [followersVisible, setFollowersVisible] = useState(false);
   const [followingVisible, setFollowingVisible] = useState(false);
-  const [followersList, setFollowersList] = useState([]);
-  const [followingList, setFollowingList] = useState([]);
-  const [listsLoading, setListsLoading] = useState(false);
-  const [liveFollowerCount, setLiveFollowerCount] = useState(null);
+  const [followersList,    setFollowersList]    = useState([]);
+  const [followingList,    setFollowingList]    = useState([]);
+  const [listsLoading,     setListsLoading]     = useState(false);
+  const [liveFollowers,    setLiveFollowers]    = useState(null);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
     setLoading(true);
-    try {
-      const data = await getUserPosts(user.uid);
-      setPosts(data);
-    } finally { setLoading(false); }
+    try { setPosts(await getUserPosts(user.uid)); }
+    finally { setLoading(false); }
   }, [user?.uid]);
 
   useFocusEffect(useCallback(() => {
     if (!user?.uid) return;
     load();
-    getFollowerCount(user.uid).then(setLiveFollowerCount).catch(() => {});
+    getFollowerCount(user.uid).then(setLiveFollowers).catch(() => {});
   }, [load, user?.uid]));
 
-  const loadFollowersList = async () => {
+  const loadFollowers = async () => {
     setListsLoading(true);
-    try {
-      const data = await getFollowers(user.uid);
-      setFollowersList(data);
-      setFollowersVisible(true);
-    } finally { setListsLoading(false); }
+    try { setFollowersList(await getFollowers(user.uid)); setFollowersVisible(true); }
+    finally { setListsLoading(false); }
   };
 
-  const loadFollowingList = async () => {
+  const loadFollowing = async () => {
     setListsLoading(true);
-    try {
-      const data = await getFollowing(user.uid);
-      setFollowingList(data);
-      setFollowingVisible(true);
-    } finally { setListsLoading(false); }
+    try { setFollowingList(await getFollowing(user.uid)); setFollowingVisible(true); }
+    finally { setListsLoading(false); }
   };
 
   const handleUnfollow = async (targetId) => {
     await unfollowUser(user.uid, targetId);
-    setFollowingList((prev) => prev.filter((u) => u.id !== targetId));
-  };
-
-  // Also update following count locally after unfollow
-  const handleUnfollowWithCount = async (targetId) => {
-    await handleUnfollow(targetId);
+    setFollowingList(prev => prev.filter(u => u.id !== targetId));
   };
 
   const handleDeletePost = (postId) => {
-    Alert.alert('Delete Post', 'Remove this post from your profile and the community feed?', [
+    Alert.alert('Delete Post', 'Remove this post from your profile and the feed?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
-        setPosts((prev) => prev.filter((p) => p.id !== postId));
+        setPosts(prev => prev.filter(p => p.id !== postId));
         try { await deletePost(postId); } catch { load(); Alert.alert('Error', 'Could not delete post.'); }
       }},
     ]);
   };
 
-  const displayName = userData?.displayName || user?.displayName || 'Athlete';
-  const streak = userData?.streak || 0;
-  const longestStreak = userData?.longestStreak || 0;
-  const followerCount = liveFollowerCount ?? userData?.followerCount ?? 0;
+  const displayName    = userData?.displayName || user?.displayName || 'Athlete';
+  const streak         = userData?.streak || 0;
+  const longestStreak  = userData?.longestStreak || 0;
+  const followerCount  = liveFollowers ?? userData?.followerCount ?? 0;
   const followingCount = userData?.followingCount || 0;
 
+  // grid item size: 3 per row with 8px gaps
+  const GRID_GAP  = 8;
+  const GRID_COLS = 3;
+  const ITEM_SIZE = (require('react-native').Dimensions.get('window').width - 40 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS;
+
+  const STATS = [
+    { label: 'Posts',     value: posts.length,    onPress: null },
+    { label: 'Followers', value: followerCount,    onPress: loadFollowers },
+    { label: 'Following', value: followingCount,   onPress: loadFollowing },
+  ];
+
   return (
-    <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 48 }}
+        showsVerticalScrollIndicator={false}
+      >
 
-        {/* Header */}
-        <Animated.View entering={FadeInDown.duration(500)} style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={22} color={Colors.text} />
+        {/* ── HEADER ── */}
+        <Animated.View entering={FadeInDown.duration(350)} style={{
+          flexDirection: 'row', alignItems: 'center',
+          justifyContent: 'space-between', marginBottom: 28,
+        }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={{
+              width: 38, height: 38, borderRadius: 19,
+              backgroundColor: C.card,
+              borderWidth: 1, borderColor: C.border,
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color={C.text} />
           </TouchableOpacity>
-          <Text style={styles.pageTitle}>Profile</Text>
-          <TouchableOpacity style={styles.findBtn} onPress={() => setSearchVisible(true)}>
-            <Ionicons name="person-add-outline" size={22} color={Colors.accent} />
+
+          <Text style={[{ fontSize: 18, color: C.text }, ff.display]}>Profile</Text>
+
+          <TouchableOpacity
+            onPress={() => setSearchVisible(true)}
+            style={{
+              width: 38, height: 38, borderRadius: 19,
+              backgroundColor: C.accent + '18',
+              borderWidth: 1, borderColor: C.accent + '40',
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="person-add-outline" size={18} color={C.accent} />
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Avatar + Name */}
-        <Animated.View entering={FadeInDown.duration(500).delay(100)} style={styles.profileSection}>
-          <View style={styles.avatarLarge}>
-            <Text style={styles.avatarLargeText}>{displayName[0]?.toUpperCase()}</Text>
+        {/* ── AVATAR + NAME ── */}
+        <Animated.View entering={FadeInDown.duration(350).delay(60)} style={{ alignItems: 'center', marginBottom: 24 }}>
+          {/* Avatar ring */}
+          <View style={{
+            width: 96, height: 96, borderRadius: 48,
+            backgroundColor: C.accent + '18',
+            borderWidth: 2.5, borderColor: C.accent + '50',
+            alignItems: 'center', justifyContent: 'center',
+            marginBottom: 14,
+            ...shadow(C.accent, 0.2, 16, 4),
+          }}>
+            <Text style={[{ fontSize: 40, color: C.accent }, ff.display]}>
+              {displayName[0]?.toUpperCase()}
+            </Text>
           </View>
-          <Text style={styles.profileName}>{displayName}</Text>
-          <Text style={styles.profileEmail}>{user?.email}</Text>
+          <Text style={[{ fontSize: 24, color: C.text, letterSpacing: -0.3 }, ff.display]}>
+            {displayName}
+          </Text>
+          <Text style={[{ fontSize: 13, color: C.textSub, marginTop: 4 }, ff.body]}>
+            {user?.email}
+          </Text>
         </Animated.View>
 
-        {/* Stats row */}
-        <Animated.View entering={FadeInDown.duration(500).delay(150)} style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNum}>{posts.length}</Text>
-            <Text style={styles.statLabel}>Posts</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <TouchableOpacity style={styles.statItem} onPress={loadFollowersList} disabled={listsLoading}>
-            <Text style={styles.statNum}>{followerCount}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
+        {/* ── STATS ROW ── */}
+        <Animated.View entering={FadeInDown.duration(350).delay(100)} style={{
+          flexDirection: 'row',
+          backgroundColor: C.card,
+          borderRadius: 20, borderWidth: 1, borderColor: C.border,
+          marginBottom: 16, overflow: 'hidden',
+          borderTopWidth: 3, borderTopColor: C.accent,
+        }}>
+          {STATS.map((s, i) => (
+            <TouchableOpacity
+              key={s.label}
+              onPress={s.onPress}
+              disabled={!s.onPress || listsLoading}
+              activeOpacity={s.onPress ? 0.7 : 1}
+              style={{
+                flex: 1, alignItems: 'center', paddingVertical: 16,
+                borderRightWidth: i < 2 ? 1 : 0,
+                borderRightColor: C.border,
+              }}
+            >
+              <Text style={[{ fontSize: 24, color: C.text, letterSpacing: -0.5 }, ff.display]}>
+                {s.value}
+              </Text>
+              <Text style={[{ fontSize: 11, color: C.textSub, marginTop: 3, letterSpacing: 0.3 }, ff.heading]}>
+                {s.label.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </Animated.View>
+
+        {/* ── STREAK CARDS ── */}
+        <Animated.View entering={FadeInDown.duration(350).delay(140)} style={{
+          flexDirection: 'row', gap: 10, marginBottom: 16,
+        }}>
+          {[
+            { icon: '🔥', value: streak,        label: 'Current Streak', color: '#ff9f43' },
+            { icon: '🏆', value: longestStreak,  label: 'Best Streak',    color: '#ffd700' },
+          ].map(card => (
+            <View key={card.label} style={{
+              flex: 1, backgroundColor: C.card,
+              borderRadius: 18, padding: 16,
+              borderWidth: 1, borderColor: C.border,
+              borderTopWidth: 3, borderTopColor: card.color,
+              alignItems: 'center', gap: 4,
+            }}>
+              <Text style={{ fontSize: 28 }}>{card.icon}</Text>
+              <Text style={[{ fontSize: 28, color: card.color, letterSpacing: -0.5 }, ff.display]}>
+                {card.value}
+              </Text>
+              <Text style={[{ fontSize: 11, color: C.textSub, letterSpacing: 0.3 }, ff.heading]}>
+                {card.label.toUpperCase()}
+              </Text>
+            </View>
+          ))}
+        </Animated.View>
+
+        {/* ── FIND PEOPLE ── */}
+        <Animated.View entering={FadeInDown.duration(350).delay(180)}>
+          <TouchableOpacity
+            onPress={() => setSearchVisible(true)}
+            activeOpacity={0.85}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: C.card, borderRadius: 16, padding: 16,
+              borderWidth: 1, borderColor: C.accent + '30',
+              marginBottom: 24,
+            }}
+          >
+            <View style={{
+              width: 36, height: 36, borderRadius: 18,
+              backgroundColor: C.accent + '18',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Ionicons name="people-outline" size={18} color={C.accent} />
+            </View>
+            <Text style={[{ flex: 1, fontSize: 15, color: C.text }, ff.heading]}>
+              Find & Follow People
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={C.textSub} />
           </TouchableOpacity>
-          <View style={styles.statDivider} />
-          <TouchableOpacity style={styles.statItem} onPress={loadFollowingList} disabled={listsLoading}>
-            <Text style={styles.statNum}>{followingCount}</Text>
-            <Text style={styles.statLabel}>Following</Text>
-          </TouchableOpacity>
         </Animated.View>
 
-        {/* Streak cards */}
-        <Animated.View entering={FadeInDown.duration(500).delay(200)} style={styles.streakRow}>
-          <View style={styles.streakCard}>
-            <Text style={styles.streakCardIcon}>🔥</Text>
-            <Text style={styles.streakCardNum}>{streak}</Text>
-            <Text style={styles.streakCardLabel}>Current Streak</Text>
+        {/* ── POSTS GRID ── */}
+        <Animated.View entering={FadeInDown.duration(350).delay(220)}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <Text style={[{ fontSize: 14, color: C.textSub, letterSpacing: 1 }, ff.heading]}>
+              YOUR POSTS
+            </Text>
+            <Text style={[{ fontSize: 12, color: C.textSub }, ff.body]}>
+              {posts.length} {posts.length === 1 ? 'post' : 'posts'}
+            </Text>
           </View>
-          <View style={styles.streakCard}>
-            <Text style={styles.streakCardIcon}>🏆</Text>
-            <Text style={styles.streakCardNum}>{longestStreak}</Text>
-            <Text style={styles.streakCardLabel}>Best Streak</Text>
-          </View>
-        </Animated.View>
 
-        {/* Find people button */}
-        <Animated.View entering={FadeInDown.duration(500).delay(250)}>
-          <TouchableOpacity style={styles.findPeopleBtn} onPress={() => setSearchVisible(true)}>
-            <Ionicons name="people-outline" size={20} color={Colors.accent} />
-            <Text style={styles.findPeopleBtnText}>Find & Follow People</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.muted} />
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Posts grid */}
-        <Animated.View entering={FadeInDown.duration(500).delay(300)}>
-          <Text style={styles.sectionTitle}>Your Posts</Text>
           {loading ? (
-            <ActivityIndicator color={Colors.accent} style={{ marginTop: 24 }} />
+            <ActivityIndicator color={C.accent} style={{ marginTop: 30 }} />
           ) : posts.length === 0 ? (
-            <View style={styles.emptyPosts}>
+            <View style={{
+              alignItems: 'center', paddingVertical: 48,
+              backgroundColor: C.card, borderRadius: 20,
+              borderWidth: 1, borderColor: C.border,
+            }}>
               <Text style={{ fontSize: 40 }}>📸</Text>
-              <Text style={styles.emptyPostsText}>No posts yet</Text>
-              <Text style={styles.emptyPostsSub}>Share your workouts from the Calendar screen</Text>
+              <Text style={[{ fontSize: 16, color: C.text, marginTop: 10 }, ff.heading]}>
+                No posts yet
+              </Text>
+              <Text style={[{ fontSize: 13, color: C.textSub, marginTop: 4, textAlign: 'center', paddingHorizontal: 20 }, ff.body]}>
+                Share your workouts from the Calendar screen
+              </Text>
             </View>
           ) : (
-            <View style={styles.grid}>
-              {posts.map((p) => <PostGridItem key={p.id} post={p} onDelete={handleDeletePost} />)}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP }}>
+              {posts.map((p, i) => (
+                <Animated.View key={p.id} entering={FadeIn.duration(300).delay(i * 30)}>
+                  <PostGridItem
+                    post={p}
+                    onDelete={handleDeletePost}
+                    C={C} ff={ff}
+                    size={ITEM_SIZE}
+                  />
+                </Animated.View>
+              ))}
             </View>
           )}
         </Animated.View>
 
-        <View style={{ height: 40 }} />
       </ScrollView>
 
       <SearchModal
         visible={searchVisible}
         onClose={() => setSearchVisible(false)}
         currentUserId={user?.uid}
+        C={C} ff={ff}
       />
-
       <FollowListModal
         visible={followersVisible}
         onClose={() => setFollowersVisible(false)}
@@ -350,92 +548,18 @@ export default function ProfileScreen({ navigation }) {
         users={followersList}
         currentUserId={user?.uid}
         showUnfollow={false}
+        C={C} ff={ff}
       />
-
       <FollowListModal
         visible={followingVisible}
         onClose={() => setFollowingVisible(false)}
         title="Following"
         users={followingList}
         currentUserId={user?.uid}
-        showUnfollow={true}
+        showUnfollow
         onUnfollow={handleUnfollow}
+        C={C} ff={ff}
       />
     </View>
   );
 }
-
-// ─── Search Modal Styles ──────────────────────────────────────────────────────
-const sm = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg, paddingTop: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, borderBottomWidth: 1, borderColor: Colors.border },
-  title: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  searchRow: { flexDirection: 'row', padding: Spacing.lg, gap: Spacing.sm },
-  searchWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, height: 46 },
-  input: { flex: 1, color: Colors.text, fontSize: 14 },
-  searchBtn: { backgroundColor: Colors.accent, borderRadius: Radius.md, paddingHorizontal: Spacing.lg, alignItems: 'center', justifyContent: 'center', height: 46 },
-  searchBtnText: { color: Colors.bg, fontWeight: '800', fontSize: 14 },
-  emptyText: { color: Colors.muted, textAlign: 'center', paddingTop: 20 },
-  userRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border, gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,245,196,0.12)', borderWidth: 1.5, borderColor: 'rgba(0,245,196,0.3)', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: Colors.accent, fontWeight: '800', fontSize: 18 },
-  userName: { color: Colors.text, fontWeight: '700', fontSize: 15 },
-  userSub: { color: Colors.muted, fontSize: 12, marginTop: 2 },
-  followBtn: { backgroundColor: Colors.accent, borderRadius: Radius.full, paddingHorizontal: 16, paddingVertical: 7 },
-  followingBtn: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
-  followBtnText: { color: Colors.bg, fontWeight: '700', fontSize: 13 },
-});
-
-// ─── Main Styles ──────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { padding: Spacing.lg, paddingTop: 60 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
-  findBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,245,196,0.1)', borderWidth: 1, borderColor: 'rgba(0,245,196,0.3)', alignItems: 'center', justifyContent: 'center' },
-  pageTitle: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  profileSection: { alignItems: 'center', marginBottom: Spacing.lg },
-  avatarLarge: { width: 88, height: 88, borderRadius: 44, backgroundColor: 'rgba(0,245,196,0.12)', borderWidth: 2.5, borderColor: 'rgba(0,245,196,0.4)', alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md },
-  avatarLargeText: { color: Colors.accent, fontSize: 36, fontWeight: '800' },
-  profileName: { color: Colors.text, fontSize: 22, fontWeight: '800' },
-  profileEmail: { color: Colors.muted, fontSize: 13, marginTop: 4 },
-  statsRow: { flexDirection: 'row', backgroundColor: Colors.card, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.lg, paddingVertical: Spacing.md },
-  statItem: { flex: 1, alignItems: 'center' },
-  statNum: { color: Colors.text, fontSize: 22, fontWeight: '800' },
-  statLabel: { color: Colors.muted, fontSize: 12, marginTop: 2 },
-  statDivider: { width: 1, backgroundColor: Colors.border },
-  streakRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg },
-  streakCard: { flex: 1, backgroundColor: Colors.card, borderRadius: Radius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md, alignItems: 'center', gap: 4 },
-  streakCardIcon: { fontSize: 28 },
-  streakCardNum: { color: Colors.accent, fontSize: 28, fontWeight: '800' },
-  streakCardLabel: { color: Colors.muted, fontSize: 12 },
-  findPeopleBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: 'rgba(0,245,196,0.25)', marginBottom: Spacing.lg, gap: Spacing.sm },
-  findPeopleBtnText: { flex: 1, color: Colors.text, fontWeight: '600', fontSize: 15 },
-  sectionTitle: { color: Colors.text, fontSize: 16, fontWeight: '700', marginBottom: Spacing.md },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
-  gridItem: { width: '32%', aspectRatio: 1, borderRadius: Radius.sm, overflow: 'hidden', position: 'relative' },
-  gridImage: { width: '100%', height: '100%' },
-  gridPlaceholder: { width: '100%', height: '100%', backgroundColor: '#0d1117', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.sm },
-  gridPlaceholderText: { color: Colors.accent, fontWeight: '800', fontSize: 11 },
-  gridOverlay: { position: 'absolute', bottom: 4, right: 6, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  gridLikes: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  emptyPosts: { alignItems: 'center', paddingVertical: 40, gap: 8 },
-  emptyPostsText: { color: Colors.text, fontSize: 16, fontWeight: '700' },
-  emptyPostsSub: { color: Colors.muted, fontSize: 13, textAlign: 'center' },
-  gridDeleteBtn: { position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center' },
-});
-
-const fl = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg, paddingTop: 20 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.lg, borderBottomWidth: 1, borderColor: Colors.border },
-  title: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 60 },
-  emptyText: { color: Colors.muted, fontSize: 15 },
-  userRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border, gap: 12 },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,245,196,0.12)', borderWidth: 1.5, borderColor: 'rgba(0,245,196,0.3)', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: Colors.accent, fontWeight: '800', fontSize: 18 },
-  userName: { color: Colors.text, fontWeight: '700', fontSize: 15 },
-  userSub: { color: Colors.muted, fontSize: 12, marginTop: 2 },
-  unfollowBtn: { backgroundColor: Colors.surface, borderRadius: Radius.full, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: Colors.border },
-  unfollowText: { color: Colors.muted, fontWeight: '700', fontSize: 13 },
-});

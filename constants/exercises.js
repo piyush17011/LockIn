@@ -15,10 +15,10 @@ export const WORKOUT_TYPES = ['Push','Pull','Legs','Upper Body','Lower Body','Fu
 
 export const QUOTES = [
   { text: 'Lock in. No excuses.', author: 'LockIn' },
-  { text: 'The pain you feel today is the strength you feel tomorrow.', author: 'Unknown' },
-  { text: 'Discipline is the bridge between goals and accomplishment.', author: 'Jim Rohn' },
-  { text: "Don't limit your challenges. Challenge your limits.", author: 'Unknown' },
-  { text: 'The only bad workout is the one that did not happen.', author: 'Unknown' },
+  { text: 'The pain you feel today is the strength you feel tomorrow.', author: 'Real' },
+  { text: 'Discipline is the bridge between goals and accomplishment.', author: 'Jim Halpert' },
+  { text: "Don't limit your challenges. Challenge your limits.", author: 'Nga' },
+  { text: 'The only bad workout is the one that did not happen.', author: 'Piyush' },
 ];
 
 // Preset exercises per workout type with emoji icons

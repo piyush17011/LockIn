@@ -1,105 +1,228 @@
-import { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Animated as RNAnimated } from 'react-native';
-import Animated, { FadeInDown, FadeIn, useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useState, useEffect } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  TextInput, Alert,
+} from 'react-native';
+import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../hooks/useAuth';
 import { saveCalorieProfile, getCalorieProfile } from '../../services/workoutService';
-import { Colors, Spacing, Radius } from '../../constants/theme';
+import { useTheme } from '../../hooks/ThemeContext';
 
 const getStorageKey = (uid) => `lockin_calories_${uid}`;
 
 const ACTIVITY = [
-  { key: 1.2,   label: 'Sedentary',   desc: 'Little/no exercise', icon: '🛋️' },
-  { key: 1.375, label: 'Light',       desc: '1–3x/week',          icon: '🚶' },
-  { key: 1.55,  label: 'Moderate',    desc: '3–5x/week',          icon: '🏃' },
-  { key: 1.725, label: 'Active',      desc: '6–7x/week',          icon: '💪' },
-  { key: 1.9,   label: 'Very Active', desc: 'Athlete level',      icon: '🔥' },
+  { key: 1.2,   label: 'Sedentary',   desc: 'Desk job, no exercise',  icon: '🛋️' },
+  { key: 1.375, label: 'Light',       desc: '1–3x/week exercise',     icon: '🚶' },
+  { key: 1.55,  label: 'Moderate',    desc: '3–5x/week exercise',     icon: '🏃' },
+  { key: 1.725, label: 'Active',      desc: '6–7x/week hard training', icon: '💪' },
+  { key: 1.9,   label: 'Very Active', desc: 'Athlete / physical job',  icon: '🔥' },
 ];
 
 const GOALS = [
-  { key: 'cut',      label: 'Cut',      desc: 'Lose fat',     icon: '📉', color: Colors.accent, adjust: -500 },
-  { key: 'maintain', label: 'Maintain', desc: 'Stay lean',    icon: '⚖️', color: Colors.blue,   adjust: 0   },
-  { key: 'bulk',     label: 'Bulk',     desc: 'Build muscle', icon: '📈', color: Colors.purple, adjust: 300 },
+  { key: 'cut',      label: 'Cut',      desc: 'Lose fat',      icon: '📉', adjust: -300 },
+  { key: 'maintain', label: 'Maintain', desc: 'Stay lean',     icon: '⚖️', adjust: 0    },
+  { key: 'bulk',     label: 'Bulk',     desc: 'Build muscle',  icon: '📈', adjust: 200  },
 ];
 
-function getMacros(calories, goal) {
-  const splits = {
-    cut:      { protein: 0.40, carbs: 0.35, fat: 0.25 },
-    maintain: { protein: 0.30, carbs: 0.40, fat: 0.30 },
-    bulk:     { protein: 0.30, carbs: 0.50, fat: 0.20 },
-  };
-  const s = splits[goal];
-  return {
-    protein: Math.round((calories * s.protein) / 4),
-    carbs:   Math.round((calories * s.carbs)   / 4),
-    fat:     Math.round((calories * s.fat)      / 9),
-  };
+// ── Indian nutrition standards (ICMR / NIN guidelines) ─────────────────────
+// Protein: 0.8–1g/kg bodyweight (ICMR RDA)
+// Carbs: 55–65% of calories (rice/roti staple diet)
+// Fat: 20–25% of calories
+// Cut: smaller deficit (−300) — aggressive cuts backfire on Indian metabolism
+// Bulk: smaller surplus (+200) — lean bulk suits Indian body composition
+function getMacros(calories, goal, weightKg) {
+  // Protein: ICMR RDA ~0.8g/kg, bump to 1–1.1g/kg for active individuals
+  // Protein: 1.5g/kg maintain · 1.8g/kg cut (muscle preservation) · 2.3g/kg bulk (mid of 2.1–2.5)
+  const proteinPerKg = goal === 'bulk' ? 2.3 : goal === 'cut' ? 1.8 : 1.5;
+  const proteinG     = Math.round(weightKg * proteinPerKg);
+  const proteinCals  = proteinG * 4;
+
+  // Fat: 20–25% of total calories
+  const fatPct  = goal === 'cut' ? 0.22 : goal === 'bulk' ? 0.20 : 0.22;
+  const fatG    = Math.round((calories * fatPct) / 9);
+  const fatCals = fatG * 9;
+
+  // Carbs: remainder — typically 55–65%
+  const carbsCals = calories - proteinCals - fatCals;
+  const carbsG    = Math.round(carbsCals / 4);
+
+  return { protein: proteinG, carbs: carbsG, fat: fatG };
 }
 
 function getBMI(weight, height) {
   const h = height / 100;
   const bmi = weight / (h * h);
+  // Asian BMI cutoffs (WHO Asia-Pacific — lower than Western standards)
   let label, color;
-  if      (bmi < 18.5) { label = 'Underweight'; color = Colors.blue;   }
-  else if (bmi < 25)   { label = 'Normal';       color = Colors.accent; }
-  else if (bmi < 30)   { label = 'Overweight';   color = Colors.orange; }
-  else                  { label = 'Obese';        color = Colors.red;    }
+  if      (bmi < 18.5) { label = 'Underweight'; color = '#54a0ff'; }
+  else if (bmi < 23)   { label = 'Normal';       color = '#00c896'; }  // Asian normal: 18.5–23
+  else if (bmi < 27.5) { label = 'Overweight';   color = '#ff9f43'; }  // Asian overweight: 23–27.5
+  else                  { label = 'Obese';        color = '#ff6b6b'; }
   return { value: bmi.toFixed(1), label, color };
 }
 
-// ── Compact summary strip shown at the top once calculated ──────────────────
-function ResultStrip({ result, goalColor, onEdit }) {
+const shadow = (color = '#000', opacity = 0.08, radius = 10, y = 3) => ({
+  shadowColor: color,
+  shadowOffset: { width: 0, height: y },
+  shadowOpacity: opacity,
+  shadowRadius: radius,
+  elevation: Math.round(radius / 2),
+});
+
+// ── Result card shown once calculated ──────────────────────────────────────
+function ResultCard({ result, weight, C, ff, onEdit }) {
+  const goalData  = GOALS.find(g => g.key === result.goal);
+  const macros    = getMacros(result.targetCals, result.goal, weight);
+  const macroList = [
+    { label: 'Protein', val: macros.protein, unit: 'g', color: '#00c896', icon: '🥩', note: 'dal · eggs · paneer' },
+    { label: 'Carbs',   val: macros.carbs,   unit: 'g', color: '#ff9f43', icon: '🍚', note: 'rice · roti · oats'  },
+    { label: 'Fat',     val: macros.fat,     unit: 'g', color: '#7b61ff', icon: '🥜', note: 'nuts · ghee · oil'   },
+  ];
+
   return (
-    <Animated.View entering={FadeIn.duration(400)} style={styles.strip}>
-      <LinearGradient
-        colors={[goalColor + '22', 'transparent']}
-        style={styles.stripGrad}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-      />
+    <Animated.View entering={FadeIn.duration(350)}>
+      {/* ── Target calories hero ── */}
+      <View style={{
+        backgroundColor: C.card, borderRadius: 22,
+        overflow: 'hidden', marginBottom: 12,
+        borderWidth: 1, borderColor: C.border,
+        borderTopWidth: 3, borderTopColor: C.accent,
+        ...shadow(C.accent, 0.12, 14, 4),
+      }}>
+        <View style={{ padding: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <View>
+              <Text style={[{ fontSize: 11, color: C.textSub, letterSpacing: 1, marginBottom: 4 }, ff.heading]}>
+                DAILY TARGET
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
+                <Text style={[{ fontSize: 52, color: C.accent, lineHeight: 56, letterSpacing: -1 }, ff.display]}>
+                  {result.targetCals}
+                </Text>
+                <Text style={[{ fontSize: 14, color: C.textSub }, ff.body]}>kcal</Text>
+              </View>
+              <Text style={[{ fontSize: 12, color: C.textSub, marginTop: 2 }, ff.body]}>
+                TDEE {result.tdee} · {goalData?.label}  {goalData?.icon}
+              </Text>
+            </View>
 
-      {/* Top row: target calories + BMI */}
-      <View style={styles.stripTop}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.stripSmall}>Daily Target</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-            <Text style={[styles.stripBig, { color: goalColor }]}>{result.targetCals}</Text>
-            <Text style={styles.stripUnit}>kcal</Text>
+            {/* BMI chip */}
+            <View style={{
+              backgroundColor: result.bmi.color + '18',
+              borderRadius: 16, padding: 14, alignItems: 'center',
+              borderWidth: 1.5, borderColor: result.bmi.color + '40',
+              minWidth: 80,
+            }}>
+              <Text style={[{ fontSize: 22, color: result.bmi.color, letterSpacing: -0.5 }, ff.display]}>
+                {result.bmi.value}
+              </Text>
+              <Text style={[{ fontSize: 10, color: result.bmi.color, marginTop: 2 }, ff.heading]}>
+                {result.bmi.label}
+              </Text>
+              <Text style={[{ fontSize: 9, color: C.textSub, marginTop: 2 }, ff.body]}>BMI (Asian)</Text>
+            </View>
           </View>
-          <Text style={styles.stripSub}>TDEE {result.tdee} kcal · {GOALS.find(g => g.key === result.goal)?.label}</Text>
         </View>
-        <View style={styles.bmiPill}>
-          <Text style={[styles.bmiPillVal, { color: result.bmi.color }]}>{result.bmi.value}</Text>
-          <Text style={[styles.bmiPillLabel, { color: result.bmi.color }]}>{result.bmi.label}</Text>
-          <Text style={styles.bmiPillTitle}>BMI</Text>
+
+        {/* Macro row */}
+        <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border }}>
+          {macroList.map((m, i) => (
+            <View
+              key={m.label}
+              style={{
+                flex: 1, alignItems: 'center', paddingVertical: 14,
+                borderRightWidth: i < 2 ? 1 : 0,
+                borderRightColor: C.border,
+              }}
+            >
+              <Text style={{ fontSize: 16 }}>{m.icon}</Text>
+              <Text style={[{ fontSize: 20, color: m.color, marginTop: 4 }, ff.display]}>
+                {m.val}<Text style={[{ fontSize: 11, color: C.textSub }, ff.body]}>{m.unit}</Text>
+              </Text>
+              <Text style={[{ fontSize: 10, color: C.textSub, marginTop: 1 }, ff.heading]}>
+                {m.label.toUpperCase()}
+              </Text>
+              <Text style={[{ fontSize: 9, color: C.textSub, marginTop: 2, textAlign: 'center', paddingHorizontal: 4 }, ff.body]}>
+                {m.note}
+              </Text>
+            </View>
+          ))}
         </View>
+
+        {/* Edit button */}
+        <TouchableOpacity
+          onPress={onEdit}
+          style={{
+            borderTopWidth: 1, borderTopColor: C.border,
+            paddingVertical: 12, alignItems: 'center',
+            flexDirection: 'row', justifyContent: 'center', gap: 6,
+          }}
+        >
+          <Text style={{ fontSize: 13 }}>✏️</Text>
+          <Text style={[{ fontSize: 13, color: C.textSub }, ff.body]}>Edit inputs</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Macros row */}
-      <View style={styles.macroStrip}>
-        {[
-          { label: 'Protein', val: result.macros.protein, unit: 'g', color: Colors.accent, icon: '🥩' },
-          { label: 'Carbs',   val: result.macros.carbs,   unit: 'g', color: Colors.orange, icon: '🍚' },
-          { label: 'Fat',     val: result.macros.fat,     unit: 'g', color: Colors.purple, icon: '🥑' },
-        ].map((m, i) => (
-          <View key={m.label} style={[styles.macroChip, i < 2 && { borderRightWidth: 1, borderRightColor: Colors.border }]}>
-            <Text style={styles.macroChipIcon}>{m.icon}</Text>
-            <Text style={[styles.macroChipVal, { color: m.color }]}>{m.val}<Text style={styles.macroChipUnit}>{m.unit}</Text></Text>
-            <Text style={styles.macroChipLabel}>{m.label}</Text>
+      {/* ── All 3 targets ── */}
+      <Text style={[{ fontSize: 11, color: C.textSub, letterSpacing: 1, marginBottom: 10, marginTop: 6 }, ff.heading]}>
+        ALL TARGETS
+      </Text>
+      {[
+        { label: 'Cut',      cal: result.deficit,  desc: '−300 kcal deficit', color: '#00c896', icon: '📉', goalKey: 'cut'      },
+        { label: 'Maintain', cal: result.tdee,     desc: 'TDEE baseline',     color: '#54a0ff', icon: '⚖️', goalKey: 'maintain' },
+        { label: 'Bulk',     cal: result.surplus,  desc: '+200 kcal surplus', color: '#7b61ff', icon: '📈', goalKey: 'bulk'     },
+      ].map(r => {
+        const isActive = result.goal === r.goalKey;
+        return (
+          <View key={r.label} style={{
+            flexDirection: 'row', alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: isActive ? r.color + '12' : C.card,
+            borderRadius: 16, padding: 16, marginBottom: 8,
+            borderWidth: isActive ? 1.5 : 1,
+            borderColor: isActive ? r.color + '60' : C.border,
+            borderLeftWidth: 3, borderLeftColor: r.color,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ fontSize: 20 }}>{r.icon}</Text>
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={[{ fontSize: 14, color: C.text }, ff.heading]}>{r.label}</Text>
+                  {isActive && (
+                    <View style={{ backgroundColor: r.color + '25', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                      <Text style={[{ fontSize: 10, color: r.color }, ff.heading]}>Your goal</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[{ fontSize: 11, color: C.textSub, marginTop: 2 }, ff.body]}>{r.desc}</Text>
+              </View>
+            </View>
+            <Text style={[{ fontSize: 22, color: r.color }, ff.display]}>
+              {r.cal}<Text style={[{ fontSize: 11, color: C.textSub }, ff.body]}> kcal</Text>
+            </Text>
           </View>
-        ))}
-      </View>
+        );
+      })}
 
-      {/* Edit button */}
-      <TouchableOpacity style={styles.editBtn} onPress={onEdit}>
-        <Text style={styles.editBtnText}>✏️  Edit inputs</Text>
-      </TouchableOpacity>
+      <Text style={[{ fontSize: 11, color: C.textSub, textAlign: 'center', marginTop: 8, fontStyle: 'italic', lineHeight: 17 }, ff.body]}>
+        Based on Mifflin-St Jeor + ICMR/NIN Indian dietary guidelines.{'\n'}
+        Asian BMI cutoffs applied. Adjust ±100 kcal per weekly progress.
+      </Text>
     </Animated.View>
   );
 }
 
-// ── Main screen ──────────────────────────────────────────────────────────────
+// ── Main screen ─────────────────────────────────────────────────────────────
 export default function CaloriesScreen() {
+  const { scheme: C, font: F } = useTheme();
+  const ff = {
+    display:  { fontFamily: F.display },
+    heading:  { fontFamily: F.heading },
+    body:     { fontFamily: F.body },
+    bodySemi: { fontFamily: F.bodySemi },
+  };
+
   const { user } = useAuth();
   const [age,       setAge]      = useState('');
   const [weight,    setWeight]   = useState('');
@@ -108,30 +231,21 @@ export default function CaloriesScreen() {
   const [activity,  setActivity] = useState(1.55);
   const [goal,      setGoal]     = useState('maintain');
   const [result,    setResult]   = useState(null);
-  const [collapsed, setCollapsed] = useState(false); // inputs collapsed after first calc
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    // Reset state when user changes — prevents showing previous user's data
     setAge(''); setWeight(''); setHeight('');
     setGender('male'); setActivity(1.55); setGoal('maintain');
     setResult(null); setCollapsed(false);
 
-    // Try AsyncStorage first for instant load, then sync from Firestore
-    AsyncStorage.getItem(getStorageKey(user?.uid || 'guest')).then((raw) => {
-      if (raw) {
-        try {
-          const s = JSON.parse(raw);
-          applyProfile(s);
-        } catch (_) {}
-      }
+    AsyncStorage.getItem(getStorageKey(user?.uid || 'guest')).then(raw => {
+      if (raw) { try { applyProfile(JSON.parse(raw)); } catch (_) {} }
     });
-    // Always fetch from Firestore to stay in sync across devices
     if (user?.uid) {
-      getCalorieProfile(user.uid).then((profile) => {
+      getCalorieProfile(user.uid).then(profile => {
         if (profile) {
           applyProfile(profile);
-          // Keep AsyncStorage in sync
-          AsyncStorage.setItem(getStorageKey(user?.uid || 'guest'), JSON.stringify(profile));
+          AsyncStorage.setItem(getStorageKey(user.uid), JSON.stringify(profile));
         }
       }).catch(() => {});
     }
@@ -149,252 +263,217 @@ export default function CaloriesScreen() {
 
   const calculate = () => {
     const a = parseInt(age), w = parseFloat(weight), h = parseFloat(height);
-    if (!a || !w || !h) return;
+    if (!a || !w || !h) return Alert.alert('Missing info', 'Please fill in age, weight and height.');
+    // Mifflin-St Jeor BMR
     const bmr = gender === 'male'
       ? 10 * w + 6.25 * h - 5 * a + 5
       : 10 * w + 6.25 * h - 5 * a - 161;
-    const tdee      = Math.round(bmr * activity);
-    const goalData  = GOALS.find((g) => g.key === goal);
-    const targetCals = tdee + goalData.adjust;
-    const macros    = getMacros(targetCals, goal);
-    const bmi       = getBMI(w, h);
-    const newResult = { tdee, deficit: tdee - 500, surplus: tdee + 300, targetCals, macros, bmi, goal };
+    const tdee        = Math.round(bmr * activity);
+    const targetCals  = tdee + GOALS.find(g => g.key === goal).adjust;
+    const bmi         = getBMI(w, h);
+    const newResult   = { tdee, deficit: tdee - 300, surplus: tdee + 200, targetCals, bmi, goal };
     setResult(newResult);
-    setCollapsed(true); // collapse inputs after calculating
+    setCollapsed(true);
     const profile = { age, weight, height, gender, activity, goal, result: newResult };
-    // Save to AsyncStorage for instant next load
     AsyncStorage.setItem(getStorageKey(user?.uid || 'guest'), JSON.stringify(profile));
-    // Save to Firestore so it syncs across devices
     if (user?.uid) saveCalorieProfile(user.uid, profile).catch(() => {});
   };
 
-  const activeGoal = GOALS.find((g) => g.key === goal);
-
   return (
-    <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 64, paddingBottom: 60 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
 
-        <Animated.View entering={FadeInDown.duration(500)}>
-          <Text style={styles.pageTitle}>Calorie Calculator</Text>
-          <Text style={styles.pageSub}>Your daily fuel targets</Text>
+        {/* ── HEADER ── */}
+        <Animated.View entering={FadeInDown.duration(400)} style={{ marginBottom: 24 }}>
+          <Text style={[{ fontSize: 26, color: C.text, letterSpacing: -0.5 }, ff.display]}>
+            Calorie Calculator
+          </Text>
+          <Text style={[{ fontSize: 13, color: C.textSub, marginTop: 3 }, ff.body]}>
+            Indian dietary guidelines · ICMR/NIN standards
+          </Text>
         </Animated.View>
 
-        {/* ── Result strip always at top once calculated ── */}
+        {/* ── RESULT ── */}
         {result && (
-          <ResultStrip
+          <ResultCard
             result={result}
-            goalColor={GOALS.find(g => g.key === result.goal)?.color || Colors.accent}
+            weight={parseFloat(weight)}
+            C={C} ff={ff}
             onEdit={() => setCollapsed(false)}
           />
         )}
 
-        {/* ── Inputs — collapsed to a summary row after first calc ── */}
+        {/* ── INPUTS ── */}
         {collapsed && result ? (
-          // Collapsed summary — shows current inputs, tap to expand
-          <TouchableOpacity style={styles.collapsedBar} onPress={() => setCollapsed(false)}>
+          <TouchableOpacity
+            onPress={() => setCollapsed(false)}
+            style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: C.card, borderRadius: 16,
+              padding: 14, borderWidth: 1, borderColor: C.border,
+              marginTop: 12,
+            }}
+          >
             <View style={{ flex: 1 }}>
-              <Text style={styles.collapsedLabel}>Current Inputs</Text>
-              <Text style={styles.collapsedValues}>
-                {gender === 'male' ? '♂️' : '♀️'} {age}yrs · {weight}kg · {height}cm · {ACTIVITY.find(a => a.key === activity)?.label}
+              <Text style={[{ fontSize: 10, color: C.textSub, letterSpacing: 1, marginBottom: 3 }, ff.heading]}>
+                CURRENT INPUTS
+              </Text>
+              <Text style={[{ fontSize: 13, color: C.text }, ff.body]}>
+                {gender === 'male' ? '♂️' : '♀️'} {age} yrs · {weight} kg · {height} cm · {ACTIVITY.find(a => a.key === activity)?.label}
               </Text>
             </View>
-            <Text style={styles.collapsedChevron}>›</Text>
+            <Text style={[{ fontSize: 22, color: C.textSub }, ff.body]}>›</Text>
           </TouchableOpacity>
         ) : (
-          // Expanded inputs
-          <Animated.View entering={FadeInDown.duration(400)}>
+          <Animated.View entering={FadeInDown.duration(380)}>
 
             {/* Gender */}
-            <Text style={styles.sectionLabel}>Gender</Text>
-            <View style={styles.genderRow}>
-              {['male', 'female'].map((g) => (
+            <Text style={[{ fontSize: 11, color: C.textSub, letterSpacing: 1, marginBottom: 10, marginTop: result ? 16 : 0 }, ff.heading]}>
+              GENDER
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+              {['male', 'female'].map(g => (
                 <TouchableOpacity
                   key={g}
-                  style={[styles.genderBtn, gender === g && styles.genderBtnActive]}
                   onPress={() => setGender(g)}
+                  activeOpacity={0.8}
+                  style={{
+                    flex: 1, flexDirection: 'row', alignItems: 'center',
+                    justifyContent: 'center', gap: 8,
+                    backgroundColor: gender === g ? C.accent + '18' : C.card,
+                    borderRadius: 14, padding: 14,
+                    borderWidth: 1.5,
+                    borderColor: gender === g ? C.accent + '80' : C.border,
+                  }}
                 >
-                  <Text style={styles.genderIcon}>{g === 'male' ? '♂️' : '♀️'}</Text>
-                  <Text style={[styles.genderText, gender === g && { color: Colors.accent }]}>
-                    {g.charAt(0).toUpperCase() + g.slice(1)}
+                  <Text style={{ fontSize: 20 }}>{g === 'male' ? '♂️' : '♀️'}</Text>
+                  <Text style={[{ fontSize: 14, color: gender === g ? C.accent : C.textSub }, ff.heading]}>
+                    {g === 'male' ? 'Male' : 'Female'}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             {/* Stats */}
-            <Text style={styles.sectionLabel}>Your Stats</Text>
-            <View style={styles.inputGrid}>
+            <Text style={[{ fontSize: 11, color: C.textSub, letterSpacing: 1, marginBottom: 10 }, ff.heading]}>
+              YOUR STATS
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
               {[
-                { label: 'Age',    value: age,    setter: setAge,    suffix: 'yrs' },
-                { label: 'Weight', value: weight, setter: setWeight, suffix: 'kg'  },
-                { label: 'Height', value: height, setter: setHeight, suffix: 'cm'  },
-              ].map((f) => (
-                <View key={f.label} style={styles.inputCard}>
-                  <Text style={styles.inputLabel}>{f.label}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="0"
-                      placeholderTextColor={Colors.muted}
-                      value={f.value}
-                      onChangeText={f.setter}
-                      keyboardType="decimal-pad"
-                    />
-                    <Text style={styles.inputSuffix}>{f.suffix}</Text>
-                  </View>
+                { label: 'Age',    value: age,    setter: setAge,    unit: 'yrs' },
+                { label: 'Weight', value: weight, setter: setWeight, unit: 'kg'  },
+                { label: 'Height', value: height, setter: setHeight, unit: 'cm'  },
+              ].map(f => (
+                <View key={f.label} style={{
+                  flex: 1, backgroundColor: C.card,
+                  borderRadius: 14, padding: 14,
+                  borderWidth: 1, borderColor: C.border,
+                }}>
+                  <Text style={[{ fontSize: 10, color: C.textSub, letterSpacing: 0.5, marginBottom: 6 }, ff.heading]}>
+                    {f.label.toUpperCase()}
+                  </Text>
+                  <TextInput
+                    style={[{ fontSize: 26, color: C.text }, ff.display]}
+                    placeholder="0"
+                    placeholderTextColor={C.border}
+                    value={f.value}
+                    onChangeText={f.setter}
+                    keyboardType="decimal-pad"
+                  />
+                  <Text style={[{ fontSize: 11, color: C.textSub }, ff.body]}>{f.unit}</Text>
                 </View>
               ))}
             </View>
 
             {/* Goal */}
-            <Text style={styles.sectionLabel}>Goal</Text>
-            <View style={styles.goalRow}>
-              {GOALS.map((g) => (
+            <Text style={[{ fontSize: 11, color: C.textSub, letterSpacing: 1, marginBottom: 10 }, ff.heading]}>
+              GOAL
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+              {GOALS.map(g => {
+                const gColor = g.key === 'cut' ? '#00c896' : g.key === 'maintain' ? '#54a0ff' : '#7b61ff';
+                return (
+                  <TouchableOpacity
+                    key={g.key}
+                    onPress={() => setGoal(g.key)}
+                    activeOpacity={0.8}
+                    style={{
+                      flex: 1, alignItems: 'center', gap: 4,
+                      backgroundColor: goal === g.key ? gColor + '18' : C.card,
+                      borderRadius: 14, padding: 14,
+                      borderWidth: 1.5,
+                      borderColor: goal === g.key ? gColor + '80' : C.border,
+                    }}
+                  >
+                    <Text style={{ fontSize: 22 }}>{g.icon}</Text>
+                    <Text style={[{ fontSize: 13, color: goal === g.key ? gColor : C.text }, ff.heading]}>
+                      {g.label}
+                    </Text>
+                    <Text style={[{ fontSize: 10, color: C.textSub }, ff.body]}>{g.desc}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Activity */}
+            <Text style={[{ fontSize: 11, color: C.textSub, letterSpacing: 1, marginBottom: 10 }, ff.heading]}>
+              ACTIVITY LEVEL
+            </Text>
+            <View style={{ gap: 8, marginBottom: 24 }}>
+              {ACTIVITY.map(a => (
                 <TouchableOpacity
-                  key={g.key}
-                  style={[styles.goalCard, goal === g.key && { borderColor: g.color, backgroundColor: g.color + '15' }]}
-                  onPress={() => setGoal(g.key)}
+                  key={a.key}
+                  onPress={() => setActivity(a.key)}
+                  activeOpacity={0.8}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 14,
+                    backgroundColor: activity === a.key ? C.accent + '12' : C.card,
+                    borderRadius: 14, padding: 14,
+                    borderWidth: 1.5,
+                    borderColor: activity === a.key ? C.accent + '70' : C.border,
+                    borderLeftWidth: 3,
+                    borderLeftColor: activity === a.key ? C.accent : C.border,
+                  }}
                 >
-                  <Text style={styles.goalIcon}>{g.icon}</Text>
-                  <Text style={[styles.goalLabel, goal === g.key && { color: g.color }]}>{g.label}</Text>
-                  <Text style={styles.goalDesc}>{g.desc}</Text>
+                  <Text style={{ fontSize: 22 }}>{a.icon}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[{ fontSize: 14, color: activity === a.key ? C.accent : C.text }, ff.heading]}>
+                      {a.label}
+                    </Text>
+                    <Text style={[{ fontSize: 11, color: C.textSub, marginTop: 2 }, ff.body]}>
+                      {a.desc}
+                    </Text>
+                  </View>
+                  {activity === a.key && (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: C.accent }} />
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
 
-            {/* Activity */}
-            <Text style={styles.sectionLabel}>Activity Level</Text>
-            {ACTIVITY.map((a) => (
-              <TouchableOpacity
-                key={a.key}
-                style={[styles.activityCard, activity === a.key && styles.activityCardActive]}
-                onPress={() => setActivity(a.key)}
-              >
-                <Text style={{ fontSize: 22 }}>{a.icon}</Text>
-                <View style={{ flex: 1, marginLeft: Spacing.md }}>
-                  <Text style={[styles.activityLabel, activity === a.key && { color: Colors.accent }]}>{a.label}</Text>
-                  <Text style={styles.activityDesc}>{a.desc}</Text>
-                </View>
-                {activity === a.key && <View style={styles.activeDot} />}
-              </TouchableOpacity>
-            ))}
-
-            <TouchableOpacity style={styles.calcBtn} onPress={calculate}>
-              <LinearGradient colors={['#00f5c4', '#00c9a7']} style={styles.calcBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={styles.calcBtnText}>{result ? 'Recalculate 🔄' : 'Calculate 🔥'}</Text>
-              </LinearGradient>
+            {/* Calculate button */}
+            <TouchableOpacity
+              onPress={calculate}
+              activeOpacity={0.85}
+              style={{
+                height: 56, borderRadius: 18,
+                backgroundColor: C.accent,
+                alignItems: 'center', justifyContent: 'center',
+                ...shadow(C.accent, 0.3, 14, 5),
+              }}
+            >
+              <Text style={[{ color: C.bg, fontSize: 17 }, ff.heading]}>
+                {result ? 'Recalculate 🔄' : 'Calculate 🔥'}
+              </Text>
             </TouchableOpacity>
           </Animated.View>
         )}
 
-        {/* All 3 targets always visible below */}
-        {result && (
-          <Animated.View entering={FadeInDown.duration(400).delay(100)}>
-            <Text style={styles.sectionLabel}>All Targets</Text>
-            {[
-              { label: 'Deficit',     cal: result.deficit,  desc: '−500 · Fat loss',      color: Colors.accent, icon: '📉' },
-              { label: 'Maintenance', cal: result.tdee,     desc: 'TDEE baseline',         color: Colors.blue,   icon: '⚖️' },
-              { label: 'Surplus',     cal: result.surplus,  desc: '+300 · Muscle gain',    color: Colors.purple, icon: '📈' },
-            ].map((r) => {
-              const isActive =
-                (result.goal === 'cut'      && r.label === 'Deficit')     ||
-                (result.goal === 'maintain' && r.label === 'Maintenance') ||
-                (result.goal === 'bulk'     && r.label === 'Surplus');
-              return (
-                <View key={r.label} style={[styles.resultCard, { borderColor: r.color + '40' }, isActive && { borderWidth: 2, borderColor: r.color }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
-                    <Text style={{ fontSize: 22 }}>{r.icon}</Text>
-                    <View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={styles.resultLabel}>{r.label}</Text>
-                        {isActive && <View style={[styles.activeBadge, { backgroundColor: r.color + '25' }]}><Text style={[styles.activeBadgeText, { color: r.color }]}>Your goal</Text></View>}
-                      </View>
-                      <Text style={styles.resultDesc}>{r.desc}</Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.resultCal, { color: r.color }]}>
-                    {r.cal}<Text style={{ fontSize: 12, color: Colors.muted }}> kcal</Text>
-                  </Text>
-                </View>
-              );
-            })}
-            <Text style={styles.disclaimer}>
-              Mifflin-St Jeor formula. Adjust ±100 kcal based on weekly progress.
-            </Text>
-          </Animated.View>
-        )}
-
-        <View style={{ height: 60 }} />
       </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { padding: Spacing.lg, paddingTop: 60 },
-  pageTitle: { fontSize: 28, fontWeight: '800', color: Colors.text },
-  pageSub: { color: Colors.muted, fontSize: 14, marginBottom: Spacing.sm, marginTop: 4 },
-  sectionLabel: { color: Colors.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.sm, marginTop: Spacing.lg },
-
-  // Result strip
-  strip: { backgroundColor: Colors.card, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden', marginTop: Spacing.md },
-  stripGrad: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  stripTop: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, paddingBottom: Spacing.sm },
-  stripBig: { fontSize: 42, fontWeight: '800', lineHeight: 48 },
-  stripUnit: { color: Colors.muted, fontSize: 14, fontWeight: '600' },
-  stripSmall: { color: Colors.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 },
-  stripSub: { color: Colors.muted, fontSize: 12, marginTop: 2 },
-  bmiPill: { alignItems: 'center', backgroundColor: Colors.surface, borderRadius: Radius.lg, padding: Spacing.md, minWidth: 80 },
-  bmiPillVal: { fontSize: 22, fontWeight: '800' },
-  bmiPillLabel: { fontSize: 11, fontWeight: '700', marginTop: 1 },
-  bmiPillTitle: { color: Colors.muted, fontSize: 10, marginTop: 2 },
-  macroStrip: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border },
-  macroChip: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, gap: 2 },
-  macroChipIcon: { fontSize: 16 },
-  macroChipVal: { fontSize: 16, fontWeight: '800' },
-  macroChipUnit: { fontSize: 11, fontWeight: '400' },
-  macroChipLabel: { color: Colors.muted, fontSize: 10, fontWeight: '600' },
-  editBtn: { borderTopWidth: 1, borderTopColor: Colors.border, paddingVertical: Spacing.sm, alignItems: 'center' },
-  editBtnText: { color: Colors.muted, fontSize: 13, fontWeight: '600' },
-
-  // Collapsed bar
-  collapsedBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, marginTop: Spacing.md },
-  collapsedLabel: { color: Colors.muted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 },
-  collapsedValues: { color: Colors.text, fontSize: 13, fontWeight: '500' },
-  collapsedChevron: { color: Colors.muted, fontSize: 24, fontWeight: '300' },
-
-  // Inputs
-  genderRow: { flexDirection: 'row', gap: Spacing.md },
-  genderBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
-  genderBtnActive: { borderColor: Colors.accent, backgroundColor: 'rgba(0,245,196,0.1)' },
-  genderIcon: { fontSize: 20 },
-  genderText: { color: Colors.muted, fontWeight: '600', fontSize: 15 },
-  inputGrid: { flexDirection: 'row', gap: Spacing.sm },
-  inputCard: { flex: 1, backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
-  inputLabel: { color: Colors.muted, fontSize: 11, fontWeight: '600', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { flex: 1, color: Colors.text, fontSize: 22, fontWeight: '800' },
-  inputSuffix: { color: Colors.muted, fontSize: 12 },
-  goalRow: { flexDirection: 'row', gap: Spacing.sm },
-  goalCard: { flex: 1, backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', gap: 4 },
-  goalIcon: { fontSize: 22 },
-  goalLabel: { color: Colors.text, fontWeight: '700', fontSize: 13 },
-  goalDesc: { color: Colors.muted, fontSize: 11 },
-  activityCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.card, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border },
-  activityCardActive: { borderColor: Colors.accent, backgroundColor: 'rgba(0,245,196,0.08)' },
-  activityLabel: { color: Colors.textSub, fontWeight: '600', fontSize: 14 },
-  activityDesc: { color: Colors.muted, fontSize: 12, marginTop: 2 },
-  activeDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.accent },
-  calcBtn: { borderRadius: Radius.lg, overflow: 'hidden', marginTop: Spacing.lg, marginBottom: Spacing.sm },
-  calcBtnGrad: { height: 56, alignItems: 'center', justifyContent: 'center' },
-  calcBtnText: { color: Colors.bg, fontWeight: '800', fontSize: 18 },
-
-  // All targets
-  resultCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, borderWidth: 1, marginBottom: Spacing.sm },
-  resultLabel: { color: Colors.text, fontWeight: '700', fontSize: 14 },
-  resultDesc: { color: Colors.muted, fontSize: 11, marginTop: 2 },
-  resultCal: { fontSize: 24, fontWeight: '800' },
-  activeBadge: { borderRadius: Radius.full, paddingHorizontal: 8, paddingVertical: 2 },
-  activeBadgeText: { fontSize: 10, fontWeight: '700' },
-  disclaimer: { color: Colors.muted, fontSize: 11, textAlign: 'center', marginTop: Spacing.lg, fontStyle: 'italic', lineHeight: 16 },
-});

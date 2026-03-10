@@ -1,22 +1,34 @@
 import { useState } from 'react';
+import ScreenTransition from './ScreenTransition';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, ScrollView,
   Platform, Alert, Modal, ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { loginUser, forgotPassword } from '../../services/authService';
-import { Colors, Spacing, Radius } from '../../constants/theme';
+import { useTheme } from '../../hooks/ThemeContext';
+import ColorSwitcher from './ColorSwitcher';
 
 export default function LoginScreen({ navigation }) {
+  const { scheme: C, font: F } = useTheme();
+  const d = makeStyles(F);
+  // font helpers — applied inline so they react to font switches
+  const ff = {
+    display:  { fontFamily: F.display },
+    heading:  { fontFamily: F.heading },
+    body:     { fontFamily: F.body },
+    bodySemi: { fontFamily: F.bodySemi },
+  };
+
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading]   = useState(false);
 
   const [forgotVisible, setForgotVisible] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
   const [forgotEmail, setForgotEmail]     = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSent, setForgotSent]       = useState(false);
@@ -34,7 +46,7 @@ export default function LoginScreen({ navigation }) {
   };
 
   const handleForgotPassword = async () => {
-    if (!forgotEmail.trim()) return Alert.alert('Enter email', 'Type the email on your account.');
+    if (!forgotEmail.trim()) return Alert.alert('Enter email', 'Type your account email.');
     setForgotLoading(true);
     try {
       await forgotPassword(forgotEmail.trim());
@@ -53,29 +65,62 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.root}>
-      <LinearGradient colors={['rgba(0,245,196,0.08)', 'transparent']} style={styles.gradTop} />
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      {/* Top accent tape */}
+      <View style={{ height: 4, backgroundColor: C.accent }} />
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={d.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
 
-          <Animated.View entering={FadeInUp.duration(600)} style={styles.logoArea}>
-            <View style={styles.logoBox}>
-              <Text style={styles.logoIcon}>🔒</Text>
+          {/* ── BRAND ── */}
+          <Animated.View entering={FadeInUp.duration(500)} style={d.brand}>
+            {/* Stamp + switcher on same row */}
+            <View style={d.brandTopRow}>
+              <View style={[d.stamp, { backgroundColor: C.accent }]}>
+                <Text style={[d.stampText, ff.display, { color: C.bg }]}>★ EST. 2025 ★</Text>
+              </View>
+              <ColorSwitcher />
             </View>
-            <Text style={styles.appName}>LOCK<Text style={styles.accent}>IN</Text></Text>
-            <Text style={styles.tagline}>Lock in. Level up.</Text>
+
+            {/* Big wordmark */}
+            <Text style={[d.wordmark, ff.display, { color: C.text }]}>
+              LOCK<Text style={{ color: C.accent }}>/</Text>IN
+            </Text>
+
+            {/* Subtitle row */}
+            <View style={d.subRow}>
+              <View style={[d.subLine, { backgroundColor: C.border }]} />
+              <Text style={[d.subText, ff.heading, { color: C.textSub }]}>LOCK IN. LEVEL UP.</Text>
+              <View style={[d.subLine, { backgroundColor: C.border }]} />
+            </View>
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.duration(700).delay(200)} style={styles.card}>
-            <Text style={styles.heading}>Welcome back</Text>
+          {/* ── FORM ── */}
+          <Animated.View
+            entering={FadeInDown.duration(600).delay(100)}
+            style={[d.card, { backgroundColor: C.card, borderColor: C.border, borderTopColor: C.accent }]}
+          >
+            {/* Section header */}
+            <View style={d.sectionRow}>
+              <Text style={[d.sectionText, ff.heading, { color: C.textSub }]}>SIGN IN</Text>
+              <View style={[d.sectionLine, { backgroundColor: C.border }]} />
+            </View>
 
-            <View style={styles.inputWrap}>
-              <Ionicons name="mail-outline" size={18} color={Colors.muted} style={styles.inputIcon} />
+            {/* Email */}
+            <Text style={[d.label, ff.heading, { color: C.textSub }]}>EMAIL</Text>
+            <View style={[d.inputWrap, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.accent }]}>
+              <Ionicons name="mail-outline" size={16} color={C.textSub} style={{ marginRight: 10 }} />
               <TextInput
-                style={styles.input}
-                placeholder="Email"
-                placeholderTextColor={Colors.muted}
+                style={[d.input, ff.heading, { color: C.text }]}
+                placeholder="YOUR@EMAIL.COM"
+                placeholderTextColor={C.textSub + '55'}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -83,70 +128,118 @@ export default function LoginScreen({ navigation }) {
               />
             </View>
 
-            <View style={styles.inputWrap}>
-              <Ionicons name="lock-closed-outline" size={18} color={Colors.muted} style={styles.inputIcon} />
+            {/* Password */}
+            <Text style={[d.label, ff.heading, { color: C.textSub }]}>PASSWORD</Text>
+            <View style={[d.inputWrap, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.accent }]}>
+              <Ionicons name="lock-closed-outline" size={16} color={C.textSub} style={{ marginRight: 10 }} />
               <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Password"
-                placeholderTextColor={Colors.muted}
+                style={[d.input, ff.heading, { flex: 1, color: C.text }]}
+                placeholder="••••••••"
+                placeholderTextColor={C.textSub + '55'}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPass}
               />
-              <TouchableOpacity onPress={() => setShowPass(!showPass)}>
-                <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={18} color={Colors.muted} />
+              <TouchableOpacity onPress={() => setShowPass(!showPass)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={16} color={C.textSub} />
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity onPress={() => setForgotVisible(true)} style={styles.forgotRow}>
-              <Text style={styles.forgotText}>Forgot password?</Text>
+            {/* Forgot */}
+            <TouchableOpacity onPress={() => setForgotVisible(true)} style={d.forgotRow}>
+              <Text style={[d.forgotText, ff.heading, { color: C.accent }]}>FORGOT PASSWORD?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.btn, loading && { opacity: 0.6 }]} onPress={handleLogin} disabled={loading}>
-              <LinearGradient colors={['#00f5c4', '#00c9a7']} style={styles.btnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                {loading ? <ActivityIndicator color={Colors.bg} /> : <Text style={styles.btnText}>Sign In</Text>}
-              </LinearGradient>
+            {/* ── BUTTON with hard offset shadow ── */}
+            <TouchableOpacity
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.8}
+              style={[d.btnOuter, loading && { opacity: 0.5 }]}
+            >
+              {/* Shadow layer */}
+              <View style={[d.btnShadow, { backgroundColor: C.accent }]} />
+              {/* Face layer */}
+              <View style={[d.btnFace, { backgroundColor: C.text }]}>
+                {loading
+                  ? <ActivityIndicator color={C.bg} />
+                  : <Text style={[d.btnText, ff.display, { color: C.bg }]}>SIGN IN →</Text>}
+              </View>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => navigation.navigate('Register')} style={styles.switchRow}>
-              <Text style={styles.switchText}>No account? </Text>
-              <Text style={[styles.switchText, { color: Colors.accent, fontWeight: '600' }]}>Create one</Text>
+            {/* Divider */}
+            <View style={d.divider}>
+              <View style={[d.divLine, { backgroundColor: C.border }]} />
+              <Text style={[d.divLabel, ff.heading, { color: C.textSub }]}>OR</Text>
+              <View style={[d.divLine, { backgroundColor: C.border }]} />
+            </View>
+
+            {/* Switch */}
+            <TouchableOpacity onPress={() => setTransitioning(true)} style={d.switchRow}>
+              <Text style={[d.switchText, ff.heading, { color: C.textSub }]}>NO ACCOUNT?  </Text>
+              <Text style={[d.switchText, ff.heading, { color: C.accent }]}>CREATE ONE</Text>
             </TouchableOpacity>
           </Animated.View>
+
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* ── TICKER ── */}
+      <View style={[d.ticker, { backgroundColor: C.accent }]}>
+        <Text style={[d.tickerText, ff.display, { color: C.bg }]} numberOfLines={1}>
+          LOCK IN ★ LEVEL UP ★ NO EXCUSES ★ STAY FOCUSED ★ LOCK IN ★ LEVEL UP ★ NO EXCUSES ★ STAY FOCUSED ★
+        </Text>
+      </View>
+
+      <ScreenTransition
+        visible={transitioning}
+        destination="JOIN UP"
+        onFinish={() => navigation.navigate('Register')}
+      />
+
+      
+      {/* ── FORGOT MODAL ── */}
       <Modal visible={forgotVisible} transparent animationType="fade" onRequestClose={closeForgotModal}>
-        <View style={styles.modalOverlay}>
-          <Animated.View entering={FadeInDown.duration(300)} style={styles.modalCard}>
+        <View style={d.modalOverlay}>
+          <Animated.View
+            entering={FadeInDown.duration(300)}
+            style={[d.modalCard, { backgroundColor: C.card, borderColor: C.border, borderTopColor: C.accent }]}
+          >
             {forgotSent ? (
               <>
-                <Text style={styles.modalEmoji}>✅</Text>
-                <Text style={styles.modalTitle}>Reset link sent!</Text>
-                <Text style={styles.modalSub}>
-                  Check your inbox at{'\n'}
-                  <Text style={{ color: Colors.accent, fontWeight: '600' }}>{forgotEmail}</Text>
-                  {'\n\n'}Click the link to set a new password.
+                <Text style={[d.wordmark, ff.display, { color: C.text, fontSize: 52, marginBottom: 8 }]}>
+                  SENT<Text style={{ color: C.accent }}>.</Text>
                 </Text>
-                <TouchableOpacity style={styles.modalBtn} onPress={closeForgotModal}>
-                  <LinearGradient colors={['#00f5c4', '#00c9a7']} style={styles.btnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Text style={styles.btnText}>Back to Login</Text>
-                  </LinearGradient>
+                <Text style={[d.modalBody, ff.body, { color: C.textSub }]}>
+                  Reset link fired to{'\n'}
+                  <Text style={{ color: C.accent }}>{forgotEmail}</Text>
+                  {'\n\n'}Check your inbox.
+                </Text>
+                <TouchableOpacity onPress={closeForgotModal} activeOpacity={0.8} style={d.btnOuter}>
+                  <View style={[d.btnShadow, { backgroundColor: C.accent }]} />
+                  <View style={[d.btnFace, { backgroundColor: C.text }]}>
+                    <Text style={[d.btnText, ff.display, { color: C.bg }]}>BACK TO LOGIN →</Text>
+                  </View>
                 </TouchableOpacity>
               </>
             ) : (
               <>
-                <TouchableOpacity onPress={closeForgotModal} style={styles.modalClose}>
-                  <Ionicons name="close" size={22} color={Colors.muted} />
+                <TouchableOpacity onPress={closeForgotModal} style={d.modalClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close" size={20} color={C.textSub} />
                 </TouchableOpacity>
-                <Text style={styles.modalTitle}>Reset Password</Text>
-                <Text style={styles.modalSub}>We'll send a reset link to your email.</Text>
-                <View style={[styles.inputWrap, { marginBottom: Spacing.lg }]}>
-                  <Ionicons name="mail-outline" size={18} color={Colors.muted} style={styles.inputIcon} />
+                <Text style={[d.wordmark, ff.display, { color: C.text, fontSize: 52, marginBottom: 6 }]}>
+                  RESET<Text style={{ color: C.accent }}>/</Text>PASS
+                </Text>
+                <Text style={[d.modalBody, ff.body, { color: C.textSub, marginBottom: 20 }]}>
+                  We'll shoot a reset link to your email.
+                </Text>
+                <Text style={[d.label, ff.heading, { color: C.textSub }]}>EMAIL</Text>
+                <View style={[d.inputWrap, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.accent, marginBottom: 24 }]}>
+                  <Ionicons name="mail-outline" size={16} color={C.textSub} style={{ marginRight: 10 }} />
                   <TextInput
-                    style={styles.input}
-                    placeholder="Your email"
-                    placeholderTextColor={Colors.muted}
+                    style={[d.input, ff.heading, { color: C.text }]}
+                    placeholder="YOUR@EMAIL.COM"
+                    placeholderTextColor={C.textSub + '55'}
                     value={forgotEmail}
                     onChangeText={setForgotEmail}
                     keyboardType="email-address"
@@ -154,10 +247,18 @@ export default function LoginScreen({ navigation }) {
                     autoFocus
                   />
                 </View>
-                <TouchableOpacity style={[styles.modalBtn, forgotLoading && { opacity: 0.6 }]} onPress={handleForgotPassword} disabled={forgotLoading}>
-                  <LinearGradient colors={['#00f5c4', '#00c9a7']} style={styles.btnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    {forgotLoading ? <ActivityIndicator color={Colors.bg} /> : <Text style={styles.btnText}>Send Reset Link</Text>}
-                  </LinearGradient>
+                <TouchableOpacity
+                  onPress={handleForgotPassword}
+                  disabled={forgotLoading}
+                  activeOpacity={0.8}
+                  style={[d.btnOuter, forgotLoading && { opacity: 0.5 }]}
+                >
+                  <View style={[d.btnShadow, { backgroundColor: C.accent }]} />
+                  <View style={[d.btnFace, { backgroundColor: C.text }]}>
+                    {forgotLoading
+                      ? <ActivityIndicator color={C.bg} />
+                      : <Text style={[d.btnText, ff.display, { color: C.bg }]}>SEND LINK →</Text>}
+                  </View>
                 </TouchableOpacity>
               </>
             )}
@@ -168,52 +269,104 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root:    { flex: 1, backgroundColor: Colors.bg },
-  gradTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 300 },
-  scroll:  { flexGrow: 1, justifyContent: 'center', padding: Spacing.lg },
-  logoArea: { alignItems: 'center', marginBottom: Spacing.xl },
-  logoBox: {
-    width: 72, height: 72, borderRadius: Radius.xl,
-    backgroundColor: 'rgba(0,245,196,0.15)', alignItems: 'center',
-    justifyContent: 'center', marginBottom: Spacing.md,
-    borderWidth: 1, borderColor: 'rgba(0,245,196,0.3)',
+// ── Static styles (colors injected inline) ────────────────────
+const makeStyles = (F) => StyleSheet.create({
+
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    paddingBottom: 32,
+    gap: 16,
   },
-  logoIcon: { fontSize: 32 },
-  appName:  { fontSize: 36, fontWeight: '800', color: Colors.text, letterSpacing: 4 },
-  accent:   { color: Colors.accent },
-  tagline:  { color: Colors.muted, marginTop: 4, fontSize: 13 },
+
+  // Brand
+  brand:       { marginBottom: 4 },
+  brandTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  stamp: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 4,
+    marginBottom: 12,
+    transform: [{ rotate: '-1.5deg' }],
+  },
+  stampText:  { fontSize: 10, fontFamily: F.display, letterSpacing: 3 },
+  wordmark: {
+    fontSize: 76,
+    lineHeight: 72,
+    letterSpacing: -1,
+  },
+  subRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  subLine: { flex: 1, height: 1 },
+  subText: { fontFamily: F.heading, fontSize: 10, letterSpacing: 3 },
+
+  // Card
   card: {
-    backgroundColor: Colors.card, borderRadius: Radius.xl,
-    padding: Spacing.lg, borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1.5,
+    borderTopWidth: 3,
+    padding: 24,
   },
-  heading: { fontSize: 22, fontWeight: '700', color: Colors.text, marginBottom: Spacing.lg },
+  sectionRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+  sectionText: { fontFamily: F.heading, fontSize: 10, letterSpacing: 3 },
+  sectionLine: { flex: 1, height: 1 },
+
+  // Inputs
+  label: { fontFamily: F.heading, fontSize: 10, letterSpacing: 2, marginBottom: 6 },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: Colors.border,
-    marginBottom: Spacing.md, paddingHorizontal: Spacing.md, height: 52,
+    borderWidth: 1.5,
+    borderLeftWidth: 3,
+    height: 54,
+    paddingHorizontal: 14,
+    marginBottom: 16,
   },
-  inputIcon: { marginRight: Spacing.sm },
-  input:     { flex: 1, color: Colors.text, fontSize: 15 },
-  forgotRow:  { alignSelf: 'flex-end', marginBottom: Spacing.md, marginTop: -4 },
-  forgotText: { color: Colors.accent, fontSize: 13, fontWeight: '500' },
-  btn:     { borderRadius: Radius.md, overflow: 'hidden', marginTop: Spacing.sm },
-  btnGrad: { height: 52, alignItems: 'center', justifyContent: 'center' },
-  btnText: { color: Colors.bg, fontWeight: '700', fontSize: 16 },
-  switchRow:  { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.lg },
-  switchText: { color: Colors.muted, fontSize: 14 },
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
-    alignItems: 'center', justifyContent: 'center', padding: Spacing.lg,
+  input: {
+    flex: 1,
+    fontSize: 16,
+    letterSpacing: 1,
   },
+
+  forgotRow:  { alignSelf: 'flex-end', marginTop: -8, marginBottom: 24 },
+  forgotText: { fontFamily: F.heading, fontSize: 11, letterSpacing: 2 },
+
+  // ── Hard offset button — the key brutalist detail ──
+  btnOuter: {
+    height: 60,         // total height including shadow
+    marginBottom: 4,
+  },
+  btnShadow: {
+    position: 'absolute',
+    top: 5, left: 5,    // offset = shadow size
+    right: 0, bottom: 0,
+  },
+  btnFace: {
+    position: 'absolute',
+    top: 0, left: 0,
+    right: 5, bottom: 5, // inverse of shadow offset
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnText: { fontFamily: F.display, fontSize: 18, letterSpacing: 3 },
+
+  // Divider
+  divider:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 20 },
+  divLine:  { flex: 1, height: 1 },
+  divLabel: { fontFamily: F.heading, fontSize: 10, letterSpacing: 2 },
+
+  // Switch
+  switchRow:  { flexDirection: 'row', justifyContent: 'center' },
+  switchText: { fontFamily: F.heading, fontSize: 14, letterSpacing: 1.5 },
+
+  // Ticker
+  ticker:     { paddingVertical: 8 },
+  tickerText: { fontFamily: F.display, fontSize: 11, letterSpacing: 3, textAlign: 'center' },
+
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', padding: 24 },
   modalCard: {
-    backgroundColor: Colors.card, borderRadius: Radius.xl,
-    padding: Spacing.xl, borderWidth: 1, borderColor: Colors.border, width: '100%',
+    borderWidth: 1.5,
+    borderTopWidth: 4,
+    padding: 28,
   },
   modalClose: { position: 'absolute', top: 16, right: 16, padding: 4 },
-  modalEmoji: { fontSize: 40, textAlign: 'center', marginBottom: Spacing.md },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: Colors.text, marginBottom: Spacing.sm, textAlign: 'center' },
-  modalSub:   { fontSize: 14, color: Colors.muted, lineHeight: 22, textAlign: 'center', marginBottom: Spacing.lg },
-  modalBtn:   { borderRadius: Radius.md, overflow: 'hidden' },
+  modalBody:  { fontFamily: F.body, fontSize: 14, lineHeight: 22 },
 });

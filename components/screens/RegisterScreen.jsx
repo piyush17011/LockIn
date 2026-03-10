@@ -1,16 +1,27 @@
 import { useState } from 'react';
+import ScreenTransition from './ScreenTransition';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, ScrollView,
   Platform, Alert, ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { registerUser } from '../../services/authService';
-import { Colors, Spacing, Radius } from '../../constants/theme';
+import { useTheme } from '../../hooks/ThemeContext';
+import ColorSwitcher from './ColorSwitcher';
 
 export default function RegisterScreen({ navigation }) {
+  const { scheme: C, font: F } = useTheme();
+  const d = makeStyles(F);
+  // font helpers — applied inline so they react to font switches
+  const ff = {
+    display:  { fontFamily: F.display },
+    heading:  { fontFamily: F.heading },
+    body:     { fontFamily: F.body },
+    bodySemi: { fontFamily: F.bodySemi },
+  };
+
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail]             = useState('');
   const [password, setPassword]       = useState('');
@@ -18,19 +29,18 @@ export default function RegisterScreen({ navigation }) {
   const [showPass, setShowPass]       = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading]         = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
 
   const handleRegister = async () => {
     if (!displayName || !email || !password || !confirm)
       return Alert.alert('Error', 'Fill in all fields');
     if (password.length < 6)
-      return Alert.alert('Weak password', 'Password must be at least 6 characters.');
+      return Alert.alert('Weak password', 'At least 6 characters required.');
     if (password !== confirm)
       return Alert.alert('Mismatch', 'Passwords do not match.');
-
     setLoading(true);
     try {
       await registerUser(email.trim(), password, displayName.trim());
-      // onAuthStateChanged in App.js handles navigation automatically
     } catch (e) {
       Alert.alert('Register Failed', e.message);
     } finally {
@@ -38,28 +48,62 @@ export default function RegisterScreen({ navigation }) {
     }
   };
 
-  return (
-    <View style={styles.root}>
-      <LinearGradient colors={['rgba(0,245,196,0.08)', 'transparent']} style={styles.gradTop} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+  // Strength 0–4
+  const strength      = Math.min(4, Math.floor(password.length / 3));
+  const strengthLabel = ['', 'WEAK', 'MEH', 'OK', 'STRONG 🔥'][strength];
 
-          <Animated.View entering={FadeInUp.duration(600)} style={styles.logoArea}>
-            <View style={styles.logoBox}><Text style={styles.logoIcon}>🔒</Text></View>
-            <Text style={styles.appName}>LOCK<Text style={styles.accent}>IN</Text></Text>
-            <Text style={styles.tagline}>Lock in. Level up.</Text>
+  const mismatch = confirm.length > 0 && confirm !== password;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={{ height: 4, backgroundColor: C.accent }} />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={d.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+
+          {/* ── BRAND ── */}
+          <Animated.View entering={FadeInUp.duration(500)} style={d.brand}>
+            <View style={d.brandTopRow}>
+              <View style={[d.stamp, { backgroundColor: C.accent }]}>
+                <Text style={[d.stampText, ff.display, { color: C.bg }]}>★ NEW RECRUIT ★</Text>
+              </View>
+              <ColorSwitcher />
+            </View>
+            <Text style={[d.wordmark, ff.display, { color: C.text }]}>
+              LOCK<Text style={{ color: C.accent }}>/</Text>IN
+            </Text>
+            <View style={d.subRow}>
+              <View style={[d.subLine, { backgroundColor: C.border }]} />
+              <Text style={[d.subText, ff.heading, { color: C.textSub }]}>JOIN THE SQUAD.</Text>
+              <View style={[d.subLine, { backgroundColor: C.border }]} />
+            </View>
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.duration(700).delay(200)} style={styles.card}>
-            <Text style={styles.heading}>Create account</Text>
+          {/* ── FORM ── */}
+          <Animated.View
+            entering={FadeInDown.duration(600).delay(100)}
+            style={[d.card, { backgroundColor: C.card, borderColor: C.border, borderTopColor: C.accent }]}
+          >
+            <View style={d.sectionRow}>
+              <Text style={[d.sectionText, ff.heading, { color: C.textSub }]}>CREATE ACCOUNT</Text>
+              <View style={[d.sectionLine, { backgroundColor: C.border }]} />
+            </View>
 
             {/* Name */}
-            <View style={styles.inputWrap}>
-              <Ionicons name="person-outline" size={18} color={Colors.muted} style={styles.inputIcon} />
+            <Text style={[d.label, ff.heading, { color: C.textSub }]}>YOUR NAME</Text>
+            <View style={[d.inputWrap, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.accent }]}>
+              <Ionicons name="person-outline" size={16} color={C.textSub} style={{ marginRight: 10 }} />
               <TextInput
-                style={styles.input}
-                placeholder="Your name"
-                placeholderTextColor={Colors.muted}
+                style={[d.input, ff.heading, { color: C.text }]}
+                placeholder="DISPLAY NAME"
+                placeholderTextColor={C.textSub + '55'}
                 value={displayName}
                 onChangeText={setDisplayName}
                 autoCapitalize="words"
@@ -67,12 +111,13 @@ export default function RegisterScreen({ navigation }) {
             </View>
 
             {/* Email */}
-            <View style={styles.inputWrap}>
-              <Ionicons name="mail-outline" size={18} color={Colors.muted} style={styles.inputIcon} />
+            <Text style={[d.label, ff.heading, { color: C.textSub }]}>EMAIL</Text>
+            <View style={[d.inputWrap, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.accent }]}>
+              <Ionicons name="mail-outline" size={16} color={C.textSub} style={{ marginRight: 10 }} />
               <TextInput
-                style={styles.input}
-                placeholder="Email"
-                placeholderTextColor={Colors.muted}
+                style={[d.input, ff.heading, { color: C.text }]}
+                placeholder="YOUR@EMAIL.COM"
+                placeholderTextColor={C.textSub + '55'}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -81,89 +126,164 @@ export default function RegisterScreen({ navigation }) {
             </View>
 
             {/* Password */}
-            <View style={styles.inputWrap}>
-              <Ionicons name="lock-closed-outline" size={18} color={Colors.muted} style={styles.inputIcon} />
+            <Text style={[d.label, ff.heading, { color: C.textSub }]}>PASSWORD</Text>
+            <View style={[d.inputWrap, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: C.accent }]}>
+              <Ionicons name="lock-closed-outline" size={16} color={C.textSub} style={{ marginRight: 10 }} />
               <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Password"
-                placeholderTextColor={Colors.muted}
+                style={[d.input, ff.heading, { flex: 1, color: C.text }]}
+                placeholder="MIN. 6 CHARACTERS"
+                placeholderTextColor={C.textSub + '55'}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPass}
               />
-              <TouchableOpacity onPress={() => setShowPass(!showPass)}>
-                <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={18} color={Colors.muted} />
+              <TouchableOpacity onPress={() => setShowPass(!showPass)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name={showPass ? 'eye-outline' : 'eye-off-outline'} size={16} color={C.textSub} />
               </TouchableOpacity>
             </View>
 
-            {/* Confirm Password — separate toggle */}
-            <View style={styles.inputWrap}>
-              <Ionicons name="lock-closed-outline" size={18} color={Colors.muted} style={styles.inputIcon} />
+            {/* Strength meter */}
+            {password.length > 0 && (
+              <View style={[d.strengthRow, { marginTop: -10, marginBottom: 16 }]}>
+                {[1, 2, 3, 4].map(i => (
+                  <View
+                    key={i}
+                    style={[
+                      d.strengthBar,
+                      { backgroundColor: i <= strength ? C.accent : C.border },
+                    ]}
+                  />
+                ))}
+                <Text style={[d.strengthLabel, ff.heading, { color: C.accent }]}>{strengthLabel}</Text>
+              </View>
+            )}
+
+            {/* Confirm */}
+            <Text style={[d.label, ff.heading, { color: C.textSub }]}>CONFIRM PASSWORD</Text>
+            <View style={[
+              d.inputWrap,
+              { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: mismatch ? C.accentAlt : C.accent },
+            ]}>
+              <Ionicons name="lock-closed-outline" size={16} color={C.textSub} style={{ marginRight: 10 }} />
               <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Confirm password"
-                placeholderTextColor={Colors.muted}
+                style={[d.input, ff.heading, { flex: 1, color: C.text }]}
+                placeholder="REPEAT PASSWORD"
+                placeholderTextColor={C.textSub + '55'}
                 value={confirm}
                 onChangeText={setConfirm}
                 secureTextEntry={!showConfirm}
               />
-              <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
-                <Ionicons name={showConfirm ? 'eye-outline' : 'eye-off-outline'} size={18} color={Colors.muted} />
+              <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name={showConfirm ? 'eye-outline' : 'eye-off-outline'} size={16} color={C.textSub} />
               </TouchableOpacity>
             </View>
 
+            {mismatch && (
+              <Text style={[d.label, ff.heading, { color: C.accentAlt, marginTop: -10, marginBottom: 16 }]}>
+                ✕ PASSWORDS DON'T MATCH
+              </Text>
+            )}
+
+            {/* CTA */}
             <TouchableOpacity
-              style={[styles.btn, loading && { opacity: 0.6 }]}
               onPress={handleRegister}
               disabled={loading}
+              activeOpacity={0.8}
+              style={[d.btnOuter, loading && { opacity: 0.5 }]}
             >
-              <LinearGradient colors={['#00f5c4', '#00c9a7']} style={styles.btnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                {loading ? <ActivityIndicator color={Colors.bg} /> : <Text style={styles.btnText}>Create Account</Text>}
-              </LinearGradient>
+              <View style={[d.btnShadow, { backgroundColor: C.accent }]} />
+              <View style={[d.btnFace, { backgroundColor: C.text }]}>
+                {loading
+                  ? <ActivityIndicator color={C.bg} />
+                  : <Text style={[d.btnText, ff.display, { color: C.bg }]}>I'M IN →</Text>}
+              </View>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.switchRow}>
-              <Text style={styles.switchText}>Already have an account? </Text>
-              <Text style={[styles.switchText, { color: Colors.accent, fontWeight: '600' }]}>Sign in</Text>
+            {/* Divider */}
+            <View style={d.divider}>
+              <View style={[d.divLine, { backgroundColor: C.border }]} />
+              <Text style={[d.divLabel, ff.heading, { color: C.textSub }]}>OR</Text>
+              <View style={[d.divLine, { backgroundColor: C.border }]} />
+            </View>
+
+            <TouchableOpacity onPress={() => setTransitioning(true)} style={d.switchRow}>
+              <Text style={[d.switchText, ff.heading, { color: C.textSub }]}>ALREADY IN?  </Text>
+              <Text style={[d.switchText, ff.heading, { color: C.accent }]}>SIGN IN</Text>
             </TouchableOpacity>
           </Animated.View>
+
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ScreenTransition
+        visible={transitioning}
+        destination="SIGN IN"
+        onFinish={() => navigation.navigate('Login')}
+      />
+
+      <View style={[d.ticker, { backgroundColor: C.accent }]}>
+        <Text style={[d.tickerText, ff.display, { color: C.bg }]} numberOfLines={1}>
+          LOCK IN ★ LEVEL UP ★ NO EXCUSES ★ STAY FOCUSED ★ LOCK IN ★ LEVEL UP ★ NO EXCUSES ★ STAY FOCUSED ★
+        </Text>
+      </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
-  gradTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 300 },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: Spacing.lg },
-  logoArea: { alignItems: 'center', marginBottom: Spacing.xl },
-  logoBox: {
-    width: 72, height: 72, borderRadius: Radius.xl,
-    backgroundColor: 'rgba(0,245,196,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: Spacing.md, borderWidth: 1, borderColor: 'rgba(0,245,196,0.3)',
+const makeStyles = (F) => StyleSheet.create({
+
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    paddingBottom: 32,
+    gap: 16,
   },
-  logoIcon: { fontSize: 32 },
-  appName: { fontSize: 36, fontWeight: '800', color: Colors.text, letterSpacing: 4 },
-  accent: { color: Colors.accent },
-  tagline: { color: Colors.muted, marginTop: 4, fontSize: 13 },
-  card: {
-    backgroundColor: Colors.card, borderRadius: Radius.xl,
-    padding: Spacing.lg, borderWidth: 1, borderColor: Colors.border,
+  brand:       { marginBottom: 4 },
+  brandTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  stamp: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 4,
+    marginBottom: 12,
+    transform: [{ rotate: '-1.5deg' }],
   },
-  heading: { fontSize: 22, fontWeight: '700', color: Colors.text, marginBottom: Spacing.lg },
+  stampText: { fontSize: 10, fontFamily: F.display, letterSpacing: 3 },
+  wordmark: {
+    fontSize: 76, lineHeight: 72, letterSpacing: -1,
+  },
+  subRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  subLine: { flex: 1, height: 1 },
+  subText: { fontFamily: F.heading, fontSize: 10, letterSpacing: 3 },
+
+  card:        { borderWidth: 1.5, borderTopWidth: 3, padding: 24 },
+  sectionRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+  sectionText: { fontFamily: F.heading, fontSize: 10, letterSpacing: 3 },
+  sectionLine: { flex: 1, height: 1 },
+
+  label:    { fontFamily: F.heading, fontSize: 10, letterSpacing: 2, marginBottom: 6 },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: Colors.border,
-    marginBottom: Spacing.md, paddingHorizontal: Spacing.md, height: 52,
+    borderWidth: 1.5, borderLeftWidth: 3,
+    height: 54, paddingHorizontal: 14, marginBottom: 16,
   },
-  inputIcon: { marginRight: Spacing.sm },
-  input: { flex: 1, color: Colors.text, fontSize: 15 },
-  btn: { borderRadius: Radius.md, overflow: 'hidden', marginTop: Spacing.sm },
-  btnGrad: { height: 52, alignItems: 'center', justifyContent: 'center' },
-  btnText: { color: Colors.bg, fontWeight: '700', fontSize: 16 },
-  switchRow: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.lg },
-  switchText: { color: Colors.muted, fontSize: 14 },
+  input: { flex: 1, fontFamily: F.heading, fontSize: 16, letterSpacing: 1 },
+
+  strengthRow:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  strengthBar:  { flex: 1, height: 3 },
+  strengthLabel:{ fontFamily: F.heading, fontSize: 9, letterSpacing: 2, minWidth: 56, textAlign: 'right' },
+
+  btnOuter: { height: 60, marginBottom: 4 },
+  btnShadow: { position: 'absolute', top: 5, left: 5, right: 0, bottom: 0 },
+  btnFace:   { position: 'absolute', top: 0, left: 0, right: 5, bottom: 5, alignItems: 'center', justifyContent: 'center' },
+  btnText:   { fontFamily: F.display, fontSize: 18, letterSpacing: 3 },
+
+  divider:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 20 },
+  divLine:  { flex: 1, height: 1 },
+  divLabel: { fontFamily: F.heading, fontSize: 10, letterSpacing: 2 },
+
+  switchRow:  { flexDirection: 'row', justifyContent: 'center' },
+  switchText: { fontFamily: F.heading, fontSize: 14, letterSpacing: 1.5 },
+
+  ticker:     { paddingVertical: 8 },
+  tickerText: { fontFamily: F.display, fontSize: 11, letterSpacing: 3, textAlign: 'center' },
 });
