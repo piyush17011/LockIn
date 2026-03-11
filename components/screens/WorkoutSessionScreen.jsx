@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, ScrollView, TouchableOpacity,
   Alert, Vibration, StatusBar, Animated as RNAnimated,
-  TextInput, Modal, KeyboardAvoidingView, Platform, AppState,
+  TextInput, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp, FadeIn, useSharedValue, useAnimatedStyle, withSpring, withTiming, withSequence } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
 import { logWorkout } from '../../services/workoutService';
 import { calcTotalCalories } from '../../constants/calorieCalc';
 import { format } from 'date-fns';
+import { useTheme } from '../../hooks/ThemeContext';
+import { PRESET_EXERCISES } from '../../constants/exercises';
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function formatTime(s) { return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`; }
@@ -23,73 +26,281 @@ const REST_OPTIONS = [
 
 export const SESSION_KEY = 'active_workout_session';
 
+// ── Exercise Picker (inline — same as LogWorkoutScreen) ──────────────────────
+function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose, C, F }) {
+  const [search, setSearch] = useState('');
+
+  const allExercises = Object.values(PRESET_EXERCISES || {})
+    .flat()
+    .filter((e, i, arr) => arr.findIndex((x) => x.name === e.name) === i);
+
+  const pool = (workoutType === 'Custom' || !(PRESET_EXERCISES?.[workoutType]?.length))
+    ? allExercises
+    : PRESET_EXERCISES[workoutType];
+
+  const filtered = pool.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
+
+  if (!visible) return null;
+
+  return (
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }}>
+      <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: 56 }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 12, borderBottomWidth: 1, borderColor: C.border, marginBottom: 8 }}>
+          <TouchableOpacity style={{ width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }} onPress={onClose}>
+            <Ionicons name="arrow-back" size={22} color={C.text} />
+          </TouchableOpacity>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: C.text, fontFamily: F.display }}>Add Exercise</Text>
+          <TouchableOpacity style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 7, backgroundColor: C.accent }} onPress={onClose}>
+            <Text style={{ fontWeight: '800', fontSize: 13, color: C.btnText, fontFamily: F.heading }}>Done</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Search */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.surface, paddingHorizontal: 16, height: 46, marginBottom: 10, marginHorizontal: 24 }}>
+          <Ionicons name="search-outline" size={16} color={C.textSub} style={{ marginRight: 8 }} />
+          <TextInput
+            style={{ flex: 1, fontSize: 14, color: C.text, fontFamily: F.body }}
+            placeholder="Search exercises..."
+            placeholderTextColor={C.textSub}
+            value={search}
+            onChangeText={setSearch}
+          />
+        </View>
+        {/* List */}
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          {filtered.length === 0 && (
+            <Text style={{ textAlign: 'center', paddingVertical: 24, fontSize: 14, color: C.textSub, fontFamily: F.body }}>No exercises found</Text>
+          )}
+          {filtered.map((item) => {
+            const isSelected = selectedNames.includes(item.name);
+            return (
+              <TouchableOpacity
+                key={item.name}
+                style={[
+                  { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 16, marginBottom: 8, borderWidth: 1, marginHorizontal: 24, backgroundColor: C.surface, borderColor: C.border },
+                  isSelected && { borderColor: C.accent, backgroundColor: C.accent + '15' },
+                ]}
+                onPress={() => !isSelected && onSelect(item)}
+              >
+                <Text style={{ fontSize: 26, marginRight: 16 }}>{item.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '600', fontSize: 15, color: isSelected ? C.accent : C.text, fontFamily: F.heading }}>{item.name}</Text>
+                  <Text style={{ fontSize: 12, marginTop: 2, color: C.textSub, fontFamily: F.body }}>{item.muscle}</Text>
+                </View>
+                <View style={{ width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center', borderColor: isSelected ? C.accent : C.border, backgroundColor: isSelected ? C.accent : 'transparent' }}>
+                  {isSelected && <Ionicons name="checkmark" size={14} color={C.btnText} />}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+
+
+// ── Animated set row — pops in when added ─────────────────────────────────────
+function SetRow({ set, setIdx, exIdx, isThisResting, C, F, updateSet, toggleDone }) {
+  const scale = useSharedValue(0.85);
+  const opacity = useSharedValue(0);
+  useEffect(() => {
+    scale.value = withSpring(1, { damping: 12, stiffness: 200 });
+    opacity.value = withTiming(1, { duration: 200 });
+  }, []);
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+  return (
+    <Animated.View style={animStyle}>
+      <View style={[
+        { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.bg, borderRadius: 12, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: C.border },
+        set.done  && { borderColor: C.accent + '44', backgroundColor: C.accent + '08' },
+        isThisResting && { borderColor: C.accent + '60' },
+      ]}>
+        <View style={[
+          { width: 28, height: 28, borderRadius: 14, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
+          set.done && { backgroundColor: C.accent },
+        ]}>
+          {set.done
+            ? <Ionicons name="checkmark" size={13} color={C.btnText} />
+            : <Text style={{ color: C.textSub, fontWeight: '700', fontSize: 12, fontFamily: F.heading }}>{setIdx + 1}</Text>
+          }
+        </View>
+        <TextInput
+          style={[
+            { flex: 1, height: 46, paddingVertical: 6, backgroundColor: C.surface, borderRadius: 10, borderWidth: 1, borderColor: C.border, color: C.text, fontWeight: '600', fontSize: 15, textAlign: 'center', fontFamily: F.heading },
+            set.done && { color: C.accent, borderColor: C.accent + '40', backgroundColor: C.accent + '08' },
+          ]}
+          placeholder="0" placeholderTextColor={C.muted}
+          keyboardType="decimal-pad" value={set.weight}
+          onChangeText={(v) => updateSet(exIdx, setIdx, 'weight', v)}
+          editable={!set.done}
+        />
+        <TextInput
+          style={[
+            { flex: 1, height: 46, paddingVertical: 6, backgroundColor: C.surface, borderRadius: 10, borderWidth: 1, borderColor: C.border, color: C.text, fontWeight: '600', fontSize: 15, textAlign: 'center', fontFamily: F.heading },
+            set.done && { color: C.accent, borderColor: C.accent + '40', backgroundColor: C.accent + '08' },
+          ]}
+          placeholder="0" placeholderTextColor={C.muted}
+          keyboardType="numeric" value={set.reps}
+          onChangeText={(v) => updateSet(exIdx, setIdx, 'reps', v)}
+          editable={!set.done}
+        />
+        <TouchableOpacity
+          style={[
+            { width: 38, height: 38, borderRadius: 10, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
+            set.done && { backgroundColor: C.accent, borderColor: C.accent },
+          ]}
+          onPress={() => toggleDone(exIdx, setIdx)}
+        >
+          <Ionicons name={set.done ? 'checkmark' : 'checkmark-outline'} size={18} color={set.done ? C.btnText : C.textSub} />
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+}
+
+// ── Exercise card ──────────────────────────────────────────────────────────────
+function ExCard({ ex, exIdx, sets, activeRest, restLeft, C, F, updateSet, toggleDone, addSet, removeSet, removeExercise }) {
+  const allDone   = (sets[exIdx] || []).every((s) => s.done);
+  const isResting = activeRest?.exIdx === exIdx;
+
+  // pulse accent glow when resting
+  const glowOpacity = useSharedValue(0);
+  useEffect(() => {
+    if (isResting) {
+      glowOpacity.value = withSequence(
+        withTiming(1, { duration: 600 }),
+        withTiming(0.3, { duration: 600 }),
+      );
+      // keep pulsing
+      const id = setInterval(() => {
+        glowOpacity.value = withSequence(
+          withTiming(1, { duration: 600 }),
+          withTiming(0.3, { duration: 600 }),
+        );
+      }, 1200);
+      return () => clearInterval(id);
+    } else {
+      glowOpacity.value = withTiming(0, { duration: 300 });
+    }
+  }, [isResting]);
+
+  const glowStyle = useAnimatedStyle(() => ({
+    borderColor: C.accent,
+    borderWidth: isResting ? 1.5 : 1,
+    shadowColor: C.accent,
+    shadowOpacity: glowOpacity.value * 0.3,
+    shadowRadius: 12,
+    elevation: glowOpacity.value * 4,
+  }));
+
+  return (
+    <Animated.View
+      entering={FadeInDown.duration(300).springify()}
+      style={[
+        { backgroundColor: C.card, borderRadius: 18, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: C.border },
+        allDone && { borderColor: C.accent + '44', backgroundColor: C.accent + '06' },
+        glowStyle,
+      ]}
+    >
+      {/* Exercise header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <Text style={{ fontSize: 24 }}>{ex.emoji}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: C.text, fontWeight: '700', fontSize: 15, fontFamily: F.heading }}>{ex.name}</Text>
+          <Text style={{ color: C.textSub, fontSize: 12, marginTop: 1, fontFamily: F.body }}>{ex.muscle}</Text>
+        </View>
+        {allDone
+          ? <Animated.View entering={FadeIn.duration(300)}>
+              <Ionicons name="checkmark-circle" size={22} color={C.accent} />
+            </Animated.View>
+          : isResting
+            ? <View style={{ backgroundColor: C.accent + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                <Text style={{ color: C.accent, fontSize: 11, fontWeight: '700', fontFamily: F.heading }}>Resting {restLeft}s</Text>
+              </View>
+            : null
+        }
+        <TouchableOpacity
+          style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#ff6b6b10', borderWidth: 1, borderColor: '#ff6b6b30', alignItems: 'center', justifyContent: 'center', marginLeft: 6 }}
+          onPress={() => removeExercise(exIdx)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="trash-outline" size={16} color="#ff6b6b" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Set column headers */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6, paddingHorizontal: 2 }}>
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.8, width: 36, fontFamily: F.heading }}>SET</Text>
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.8, flex: 1, textAlign: 'center', fontFamily: F.heading }}>WEIGHT (kg)</Text>
+        <Text style={{ color: C.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.8, flex: 1, textAlign: 'center', fontFamily: F.heading }}>REPS</Text>
+        <View style={{ width: 44 }} />
+      </View>
+
+      {sets[exIdx].map((set, setIdx) => {
+        const isThisResting = activeRest?.exIdx === exIdx && activeRest?.setIdx === setIdx;
+        return (
+          <SetRow
+            key={setIdx}
+            set={set} setIdx={setIdx} exIdx={exIdx}
+            isThisResting={isThisResting}
+            C={C} F={F}
+            updateSet={updateSet}
+            toggleDone={toggleDone}
+          />
+        );
+      })}
+
+      {/* Add / remove set */}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+        <TouchableOpacity
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: C.accent + '10', borderWidth: 1, borderColor: C.accent + '33' }}
+          onPress={() => addSet(exIdx)}
+        >
+          <Ionicons name="add-circle-outline" size={16} color={C.accent} />
+          <Text style={{ color: C.accent, fontSize: 13, fontWeight: '600', fontFamily: F.body }}>Add Set</Text>
+        </TouchableOpacity>
+        {sets[exIdx].length > 1 && (
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#ff6b6b0a', borderWidth: 1, borderColor: '#ff6b6b33' }}
+            onPress={() => removeSet(exIdx)}
+          >
+            <Ionicons name="remove-circle-outline" size={16} color="#ff6b6b" />
+            <Text style={{ color: '#ff6b6b', fontSize: 13, fontWeight: '600', fontFamily: F.body }}>Remove Last</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </Animated.View>
+  );
+}
+
 export default function WorkoutSessionScreen({ route, navigation }) {
-  const { workout, date } = route.params;
+  const { workout, date, restoredExercises, restoredSets, wallStart: restoredWallStart } = route.params;
   const { user, userData } = useAuth();
   const userWeightKg = userData?.calorieProfile?.weight || 70;
+  const { scheme: C, font: F } = useTheme();
+  const ff = { heading: { fontFamily: F.heading }, body: { fontFamily: F.body }, display: { fontFamily: F.display } };
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // TIMER
-  //
-  // How it works:
-  //   accumulatedRef  = total seconds counted during all previous active periods
-  //   sessionStartRef = Date.now() of when the CURRENT active period began
-  //
-  // Every tick:  elapsed = accumulatedRef + floor((now - sessionStartRef) / 1000)
-  //
-  // On background: freeze accumulatedRef (add current period), clear interval
-  // On foreground: reset sessionStartRef to now, restart interval
-  //
-  // This means elapsed is ALWAYS correct regardless of how long the app was
-  // in the background or recent apps.
-  // ─────────────────────────────────────────────────────────────────────────────
-  const accumulatedRef   = useRef(0);
-  const sessionStartRef  = useRef(Date.now());
+  // ─── TIMER ───────────────────────────────────────────────────────────────────
+  const wallStartRef     = useRef(restoredWallStart ?? Date.now());
   const timerIntervalRef = useRef(null);
-  const appStateRef      = useRef(AppState.currentState);
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsed, setElapsed] = useState(
+    restoredWallStart ? Math.floor((Date.now() - restoredWallStart) / 1000) : 0
+  );
 
-  const startInterval = () => {
-    if (timerIntervalRef.current) return;
-    sessionStartRef.current = Date.now();
+  useEffect(() => {
     timerIntervalRef.current = setInterval(() => {
-      setElapsed(accumulatedRef.current + Math.floor((Date.now() - sessionStartRef.current) / 1000));
+      setElapsed(Math.floor((Date.now() - wallStartRef.current) / 1000));
     }, 1000);
-  };
-
-  const stopInterval = () => {
-    if (!timerIntervalRef.current) return;
-    accumulatedRef.current += Math.floor((Date.now() - sessionStartRef.current) / 1000);
-    clearInterval(timerIntervalRef.current);
-    timerIntervalRef.current = null;
-  };
-
-  useEffect(() => {
-    startInterval();
-    return () => stopInterval();
+    return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current); };
   }, []);
 
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState) => {
-      const prevState = appStateRef.current;
-      appStateRef.current = nextState;
-
-      if (prevState === 'active' && (nextState === 'background' || nextState === 'inactive')) {
-        stopInterval();
-        // Immediately persist to AsyncStorage while going to background
-        persistNow();
-      }
-      if ((prevState === 'background' || prevState === 'inactive') && nextState === 'active') {
-        startInterval();
-      }
-    });
-    return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // REST TIMER
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─── REST TIMER ──────────────────────────────────────────────────────────────
   const [restDuration, setRestDuration]     = useState(60);
   const [showRestPicker, setShowRestPicker] = useState(false);
   const [customRest, setCustomRest]         = useState('');
@@ -125,19 +336,22 @@ export default function WorkoutSessionScreen({ route, navigation }) {
 
   useEffect(() => () => { if (restIntervalRef.current) clearInterval(restIntervalRef.current); }, []);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // EXERCISES & SETS
-  // ─────────────────────────────────────────────────────────────────────────────
-  const [exercises, setExercises] = useState(() => workout.exercises.map((ex) => ({ ...ex })));
+  // ─── EXERCISES & SETS ────────────────────────────────────────────────────────
+  const [exercises, setExercises] = useState(() =>
+    restoredExercises?.length
+      ? restoredExercises
+      : workout.exercises.map((ex) => ({ ...ex }))
+  );
   const [sets, setSets] = useState(() =>
-    workout.exercises.map((ex) =>
-      (ex.sets?.length ? ex.sets : [{ weight: '', reps: '' }]).map((s) => ({
-        weight: s.weight || '', reps: s.reps || '', done: false,
-      }))
-    )
+    restoredSets?.length
+      ? restoredSets
+      : workout.exercises.map((ex) =>
+          (ex.sets?.length ? ex.sets : [{ weight: '', reps: '' }]).map((s) => ({
+            weight: s.weight || '', reps: s.reps || '', done: false,
+          }))
+        )
   );
 
-  // Refs so persistNow() can always read latest values without stale closures
   const exercisesRef = useRef(exercises);
   const setsRef      = useRef(sets);
   useEffect(() => { exercisesRef.current = exercises; }, [exercises]);
@@ -180,35 +394,22 @@ export default function WorkoutSessionScreen({ route, navigation }) {
     ));
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // PERSISTENCE
-  //
-  // persistNow() reads from refs so it can be called from AppState handler
-  // (which has no access to current React state via closure).
-  //
-  // The useEffect below calls persistNow() whenever sets/exercises change,
-  // so every completed set / added exercise is immediately saved.
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─── PERSISTENCE ─────────────────────────────────────────────────────────────
   const persistNow = () => {
     if (!user?.uid) return;
-    const currentElapsed =
-      accumulatedRef.current + Math.floor((Date.now() - sessionStartRef.current) / 1000);
     AsyncStorage.setItem(SESSION_KEY, JSON.stringify({
-      workout,
-      date,
+      workout, date,
       exercises: exercisesRef.current,
-      sets: setsRef.current,
-      elapsedSeconds: currentElapsed,
-      savedAt: Date.now(),
-      userId: user.uid,
+      sets:      setsRef.current,
+      wallStart: wallStartRef.current,
+      savedAt:   Date.now(),
+      userId:    user.uid,
     })).catch(() => {});
   };
 
   useEffect(() => { persistNow(); }, [sets, exercises]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // PROGRESS & LIVE CALORIES
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─── PROGRESS & CALORIES ─────────────────────────────────────────────────────
   const totalSets    = sets.reduce((a, ex) => a + ex.length, 0);
   const doneSets     = sets.reduce((a, ex) => a + ex.filter((s) => s.done).length, 0);
   const progress     = totalSets > 0 ? doneSets / totalSets : 0;
@@ -222,14 +423,22 @@ export default function WorkoutSessionScreen({ route, navigation }) {
     userWeightKg,
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // FINISH
-  // ─────────────────────────────────────────────────────────────────────────────
+  // Animate stats when doneSets changes
+  const statScale = useSharedValue(1);
+  useEffect(() => {
+    if (doneSets > 0) {
+      statScale.value = withSequence(withSpring(1.15, { damping: 8 }), withSpring(1));
+    }
+  }, [doneSets]);
+  const statScaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: statScale.value }] }));
+
+  // ─── FINISH ──────────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
+  const [showExPicker, setShowExPicker] = useState(false);
 
   const saveAndShare = async () => {
     setSaving(true);
-    stopInterval();
+    if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
 
     const flat = exercises.map((ex, exIdx) => {
       const done = (sets[exIdx] || []).filter((s) => s.done);
@@ -264,12 +473,23 @@ export default function WorkoutSessionScreen({ route, navigation }) {
     logWorkout(user.uid, payload).catch((e) => console.error('Save failed', e));
     setSaving(false);
 
-    navigation.replace('WorkoutShare', {
+    navigation.navigate('WorkoutShare', {
       workout: { ...payload, id: `share_${Date.now()}` },
       streak:   userData?.streak || 0,
       userName: userData?.displayName || user?.displayName || 'Athlete',
       userId:   user.uid,
     });
+  };
+
+  const addExerciseMidSession = (item) => {
+    const already = exercises.find((e) => e.name === item.name);
+    if (already) return;
+    const cardioKw = ['running','cycling','jump rope','rowing','swimming','elliptical','stair','walk','jog','sprint','treadmill','cardio','burpee','mountain climber','box jump','skipping','hiit','bike','run'];
+    const isCardio = cardioKw.some((k) =>
+      item.name.toLowerCase().includes(k) || (item.muscle || '').toLowerCase().includes('cardio')
+    );
+    setExercises((prev) => [...prev, { name: item.name, emoji: item.emoji, muscle: item.muscle, isCardio }]);
+    setSets((prev) => [...prev, [isCardio ? { minutes: '', seconds: '' } : { weight: '', reps: '', done: false }]]);
   };
 
   const handleFinish = () => {
@@ -291,265 +511,244 @@ export default function WorkoutSessionScreen({ route, navigation }) {
   const handleQuit = () => {
     Alert.alert('Quit Workout?', 'Your progress is saved — continue from the Dashboard.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Quit', style: 'destructive', onPress: () => { stopInterval(); navigation.goBack(); } },
+      { text: 'Quit', style: 'destructive', onPress: () => {
+          if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null; }
+          navigation.goBack();
+        } },
     ]);
   };
 
   const restBarWidth = restAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─── RENDER ──────────────────────────────────────────────────────────────────
   return (
-    <View style={s.root}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
       <StatusBar barStyle="light-content" />
 
-      {/* Header */}
-      <View style={s.header}>
-        <TouchableOpacity style={s.iconBtn} onPress={handleQuit}>
-          <Ionicons name="close" size={20} color="#6b7a99" />
+      {/* ── Header ── */}
+      <Animated.View entering={FadeInDown.duration(350)} style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        paddingHorizontal: 20, paddingTop: 56, paddingBottom: 10,
+      }}>
+        <TouchableOpacity
+          style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' }}
+          onPress={handleQuit}
+        >
+          <Ionicons name="close" size={20} color={C.textSub} />
         </TouchableOpacity>
-        <View style={s.timerWrap}>
-          <Text style={s.timerLabel}>ELAPSED</Text>
-          <Text style={s.timer}>{formatTime(elapsed)}</Text>
-        </View>
-        <TouchableOpacity style={[s.finishBtn, saving && { opacity: 0.6 }]} onPress={handleFinish} disabled={saving}>
-          <Text style={s.finishBtnText}>{saving ? '...' : 'Finish'}</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Live Stats */}
-      <View style={s.statsRow}>
-        <View style={s.statChip}>
+        {/* Timer — center */}
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ color: C.textSub, fontSize: 10, fontWeight: '700', letterSpacing: 1, fontFamily: F.heading }}>ELAPSED</Text>
+          <Text style={{ color: C.text, fontSize: 32, fontWeight: '800', fontFamily: F.display }}>{formatTime(elapsed)}</Text>
+        </View>
+
+        <TouchableOpacity
+          style={[{ backgroundColor: C.accent, borderRadius: 20, paddingHorizontal: 18, paddingVertical: 8 }, saving && { opacity: 0.6 }]}
+          onPress={handleFinish} disabled={saving}
+        >
+          <Text style={{ color: C.btnText, fontWeight: '800', fontSize: 14, fontFamily: F.heading }}>{saving ? '...' : 'Finish'}</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* ── Live stats ── */}
+      <Animated.View entering={FadeInDown.duration(350).delay(60)} style={{
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        marginHorizontal: 20, marginBottom: 10,
+        backgroundColor: C.card, borderRadius: 14, padding: 12,
+        borderWidth: 1, borderColor: C.border, gap: 8,
+      }}>
+        <Animated.View style={[{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }]}>
           <Ionicons name="flame-outline" size={14} color="#ff9f43" />
-          <Text style={s.statValue}>{liveCalories}</Text>
-          <Text style={s.statLabel}>cal</Text>
-        </View>
-        <View style={s.statDivider} />
-        <View style={s.statChip}>
-          <Ionicons name="checkmark-circle-outline" size={14} color="#00f5c4" />
-          <Text style={s.statValue}>{doneSets}</Text>
-          <Text style={s.statLabel}>sets done</Text>
-        </View>
-        <View style={s.statDivider} />
-        <View style={s.statChip}>
+          <Text style={{ color: C.text, fontWeight: '800', fontSize: 16, fontFamily: F.display }}>{liveCalories}</Text>
+          <Text style={{ color: C.textSub, fontSize: 11, fontWeight: '600', fontFamily: F.body }}>cal</Text>
+        </Animated.View>
+        <View style={{ width: 1, height: 20, backgroundColor: C.border }} />
+        <Animated.View style={[{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }, statScaleStyle]}>
+          <Ionicons name="checkmark-circle-outline" size={14} color={C.accent} />
+          <Text style={{ color: C.text, fontWeight: '800', fontSize: 16, fontFamily: F.display }}>{doneSets}</Text>
+          <Text style={{ color: C.textSub, fontSize: 11, fontWeight: '600', fontFamily: F.body }}>sets done</Text>
+        </Animated.View>
+        <View style={{ width: 1, height: 20, backgroundColor: C.border }} />
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
           <Ionicons name="barbell-outline" size={14} color="#54a0ff" />
-          <Text style={s.statValue}>{exercises.length}</Text>
-          <Text style={s.statLabel}>exercises</Text>
+          <Text style={{ color: C.text, fontWeight: '800', fontSize: 16, fontFamily: F.display }}>{exercises.length}</Text>
+          <Text style={{ color: C.textSub, fontSize: 11, fontWeight: '600', fontFamily: F.body }}>exercises</Text>
         </View>
+      </Animated.View>
+
+      {/* ── Rest duration picker ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, marginBottom: 10, flexWrap: 'wrap' }}>
+        <Ionicons name="timer-outline" size={15} color={C.textSub} />
+        <Text style={{ color: C.textSub, fontSize: 12, marginRight: 2, fontFamily: F.body }}>Rest:</Text>
+        {REST_OPTIONS.map((o) => {
+          const active = restDuration === o.value;
+          return (
+            <TouchableOpacity
+              key={o.value}
+              style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: active ? C.accent + '20' : C.surface, borderWidth: 1, borderColor: active ? C.accent : C.border }}
+              onPress={() => setRestDuration(o.value)}
+            >
+              <Text style={{ color: active ? C.accent : C.textSub, fontSize: 12, fontWeight: '600', fontFamily: F.body }}>{o.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+        {/* Custom chip */}
+        {(() => {
+          const isCustom = !REST_OPTIONS.find((o) => o.value === restDuration);
+          return (
+            <TouchableOpacity
+              style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isCustom ? C.accent + '20' : C.surface, borderWidth: 1, borderColor: isCustom ? C.accent : C.border }}
+              onPress={() => setShowRestPicker(true)}
+            >
+              <Text style={{ color: isCustom ? C.accent : C.textSub, fontSize: 12, fontWeight: '600', fontFamily: F.body }}>
+                {isCustom ? `${restDuration}s` : 'Custom'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })()}
       </View>
 
-      {/* Rest Duration Picker */}
-      <View style={s.restConfigRow}>
-        <Ionicons name="timer-outline" size={15} color="#6b7a99" />
-        <Text style={s.restConfigLabel}>Rest:</Text>
-        {REST_OPTIONS.map((o) => (
-          <TouchableOpacity key={o.value} style={[s.restChip, restDuration === o.value && s.restChipActive]} onPress={() => setRestDuration(o.value)}>
-            <Text style={[s.restChipText, restDuration === o.value && s.restChipTextActive]}>{o.label}</Text>
-          </TouchableOpacity>
-        ))}
-        <TouchableOpacity style={[s.restChip, !REST_OPTIONS.find((o) => o.value === restDuration) && s.restChipActive]} onPress={() => setShowRestPicker(true)}>
-          <Text style={[s.restChipText, !REST_OPTIONS.find((o) => o.value === restDuration) && s.restChipTextActive]}>
-            {REST_OPTIONS.find((o) => o.value === restDuration) ? 'Custom' : `${restDuration}s`}
-          </Text>
-        </TouchableOpacity>
+      {/* ── Progress bar ── */}
+      <View style={{ height: 4, backgroundColor: C.surface, marginHorizontal: 20, borderRadius: 2 }}>
+        <RNAnimated.View style={{ height: 4, backgroundColor: C.accent, borderRadius: 2, width: `${progress * 100}%` }} />
       </View>
+      <Text style={{ color: C.textSub, fontSize: 12, textAlign: 'center', marginTop: 6, marginBottom: 4, fontFamily: F.body }}>
+        {doneSets}/{totalSets} sets complete
+      </Text>
 
-      {/* Progress bar */}
-      <View style={s.progressBg}><View style={[s.progressFill, { width: `${progress * 100}%` }]} /></View>
-      <Text style={s.progressLabel}>{doneSets}/{totalSets} sets complete</Text>
-
-      {/* Active rest banner */}
+      {/* ── Active rest banner ── */}
       {activeRest && (
-        <View style={s.restBanner}>
-          <Text style={s.restEmoji}>😮‍💨</Text>
+        <Animated.View entering={FadeInUp.duration(300)} style={{
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+          marginHorizontal: 20, marginTop: 8,
+          backgroundColor: C.card, borderRadius: 14, padding: 12,
+          borderWidth: 1.5, borderColor: C.accent + '50',
+        }}>
+          <Text style={{ fontSize: 26 }}>😮‍💨</Text>
           <View style={{ flex: 1 }}>
-            <Text style={s.restTitle}>Rest · {exercises[activeRest.exIdx]?.name} set {activeRest.setIdx + 1}</Text>
-            <Text style={s.restCount}>{restLeft}s</Text>
-            <View style={s.restBarBg}><RNAnimated.View style={[s.restBarFill, { width: restBarWidth }]} /></View>
+            <Text style={{ color: C.textSub, fontSize: 11, fontWeight: '600', fontFamily: F.body }}>
+              Rest · {exercises[activeRest.exIdx]?.name} set {activeRest.setIdx + 1}
+            </Text>
+            <Text style={{ color: C.accent, fontSize: 22, fontWeight: '800', fontFamily: F.display }}>{restLeft}s</Text>
+            <View style={{ height: 3, backgroundColor: C.surface, borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
+              <RNAnimated.View style={{ height: 3, backgroundColor: C.accent, width: restBarWidth }} />
+            </View>
           </View>
-          <TouchableOpacity style={s.skipBtn} onPress={skipRest}>
-            <Text style={s.skipBtnText}>Skip →</Text>
+          <TouchableOpacity
+            style={{ backgroundColor: C.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: C.border }}
+            onPress={skipRest}
+          >
+            <Text style={{ color: C.text, fontWeight: '700', fontSize: 13, fontFamily: F.heading }}>Skip →</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       )}
 
-      {/* Exercise list */}
+      {/* ── Exercise list ── */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={s.workoutType}>{workout.type}</Text>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={{ color: C.textSub, fontSize: 12, fontWeight: '700', letterSpacing: 1.5, marginBottom: 14, textTransform: 'uppercase', fontFamily: F.heading }}>
+            {workout.type}
+          </Text>
 
-          {exercises.map((ex, exIdx) => {
-            const allDone   = (sets[exIdx] || []).every((s) => s.done);
-            const isResting = activeRest?.exIdx === exIdx;
-            return (
-              <View key={exIdx} style={[s.exCard, allDone && s.exCardDone, isResting && s.exCardResting]}>
-                <View style={s.exHeader}>
-                  <Text style={s.exEmoji}>{ex.emoji}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.exName}>{ex.name}</Text>
-                    <Text style={s.exMuscle}>{ex.muscle}</Text>
-                  </View>
-                  {allDone
-                    ? <Ionicons name="checkmark-circle" size={22} color="#00f5c4" />
-                    : isResting
-                      ? <View style={s.restingBadge}><Text style={s.restingBadgeText}>Resting {restLeft}s</Text></View>
-                      : null}
-                  <TouchableOpacity style={s.removeExBtn} onPress={() => removeExercise(exIdx)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="trash-outline" size={16} color="#ff6b6b" />
-                  </TouchableOpacity>
-                </View>
+          {exercises.map((ex, exIdx) => (
+            <ExCard
+              key={exIdx}
+              ex={ex} exIdx={exIdx}
+              sets={sets}
+              activeRest={activeRest}
+              restLeft={restLeft}
+              C={C} F={F}
+              updateSet={updateSet}
+              toggleDone={toggleDone}
+              addSet={addSet}
+              removeSet={removeSet}
+              removeExercise={removeExercise}
+            />
+          ))}
 
-                <View style={s.setHeaderRow}>
-                  <Text style={[s.setHeaderCell, { width: 32 }]}>SET</Text>
-                  <Text style={[s.setHeaderCell, { flex: 1 }]}>WEIGHT (kg)</Text>
-                  <Text style={[s.setHeaderCell, { flex: 1 }]}>REPS</Text>
-                  <View style={{ width: 44 }} />
-                </View>
-
-                {sets[exIdx].map((set, setIdx) => {
-                  const isThisResting = activeRest?.exIdx === exIdx && activeRest?.setIdx === setIdx;
-                  return (
-                    <View key={setIdx} style={[s.setRow, set.done && s.setRowDone, isThisResting && s.setRowResting]}>
-                      <View style={[s.setNum, set.done && s.setNumDone]}>
-                        {set.done ? <Ionicons name="checkmark" size={13} color="#080b10" /> : <Text style={s.setNumText}>{setIdx + 1}</Text>}
-                      </View>
-                      <TextInput
-                        style={[s.setInput, set.done && s.setInputDone]}
-                        placeholder="0" placeholderTextColor="#3a4560"
-                        keyboardType="decimal-pad" value={set.weight}
-                        onChangeText={(v) => updateSet(exIdx, setIdx, 'weight', v)}
-                        editable={!set.done}
-                      />
-                      <TextInput
-                        style={[s.setInput, set.done && s.setInputDone]}
-                        placeholder="0" placeholderTextColor="#3a4560"
-                        keyboardType="numeric" value={set.reps}
-                        onChangeText={(v) => updateSet(exIdx, setIdx, 'reps', v)}
-                        editable={!set.done}
-                      />
-                      <TouchableOpacity style={[s.doneBtn, set.done && s.doneBtnActive]} onPress={() => toggleDone(exIdx, setIdx)}>
-                        <Ionicons name={set.done ? 'checkmark' : 'checkmark-outline'} size={18} color={set.done ? '#080b10' : '#6b7a99'} />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
-
-                <View style={s.setActions}>
-                  <TouchableOpacity style={s.addSetBtn} onPress={() => addSet(exIdx)}>
-                    <Ionicons name="add-circle-outline" size={16} color="#00f5c4" />
-                    <Text style={s.addSetText}>Add Set</Text>
-                  </TouchableOpacity>
-                  {sets[exIdx].length > 1 && (
-                    <TouchableOpacity style={s.removeSetBtn} onPress={() => removeSet(exIdx)}>
-                      <Ionicons name="remove-circle-outline" size={16} color="#ff6b6b" />
-                      <Text style={s.removeSetText}>Remove Last</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+          {/* Add exercise mid-session */}
+          <Animated.View entering={FadeInDown.duration(300).delay(100)}>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, padding: 14, marginBottom: 12, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border }}
+              onPress={() => setShowExPicker(true)}
+              activeOpacity={0.75}
+            >
+              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: C.accent + '20', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="add" size={18} color={C.accent} />
               </View>
-            );
-          })}
+              <Text style={{ color: C.accent, fontWeight: '700', fontSize: 14, fontFamily: F.heading }}>Add Exercise</Text>
+            </TouchableOpacity>
+          </Animated.View>
 
-          <TouchableOpacity style={[s.bigFinishBtn, saving && { opacity: 0.6 }]} onPress={handleFinish} disabled={saving}>
-            <Text style={s.bigFinishText}>{saving ? 'Saving...' : '🔥 Finish Workout'}</Text>
-            <Text style={s.bigFinishSub}>{formatTime(elapsed)} · {doneSets}/{totalSets} sets · ~{liveCalories} cal</Text>
-          </TouchableOpacity>
+          {/* Finish workout button */}
+          <Animated.View entering={FadeInUp.duration(400).delay(200)}>
+            <TouchableOpacity
+              style={[
+                { backgroundColor: C.accent + '18', borderRadius: 18, padding: 20, alignItems: 'center', marginTop: 8, borderWidth: 1.5, borderColor: C.accent + '44' },
+                saving && { opacity: 0.6 },
+              ]}
+              onPress={handleFinish} disabled={saving}
+            >
+              <Text style={{ color: C.accent, fontSize: 18, fontWeight: '800', fontFamily: F.display }}>
+                {saving ? 'Saving...' : '🔥 Finish Workout'}
+              </Text>
+              <Text style={{ color: C.textSub, fontSize: 13, marginTop: 4, fontFamily: F.body }}>
+                {formatTime(elapsed)} · {doneSets}/{totalSets} sets · ~{liveCalories} cal
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+
           <View style={{ height: 60 }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Custom rest modal */}
+      {/* ── Add exercise picker ── */}
+      {showExPicker && (
+        <ExercisePicker
+          visible={showExPicker}
+          workoutType={workout.type}
+          selectedNames={exercises.map((e) => e.name)}
+          onSelect={(item) => {
+            addExerciseMidSession(item);
+            setShowExPicker(false);
+          }}
+          onClose={() => setShowExPicker(false)}
+          C={C} F={F}
+        />
+      )}
+
+      {/* ── Custom rest modal ── */}
       <Modal visible={showRestPicker} transparent animationType="fade">
-        <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setShowRestPicker(false)}>
-          <View style={s.restPickerCard}>
-            <Text style={s.restPickerTitle}>Custom Rest (seconds)</Text>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' }} activeOpacity={1} onPress={() => setShowRestPicker(false)}>
+          <Animated.View entering={FadeInDown.duration(300)} style={{
+            width: 280, backgroundColor: C.card, borderRadius: 20, padding: 24,
+            borderWidth: 1, borderColor: C.border,
+          }}>
+            <Text style={{ color: C.text, fontWeight: '700', fontSize: 16, marginBottom: 16, fontFamily: F.heading }}>Custom Rest (seconds)</Text>
             <TextInput
-              style={s.restPickerInput} placeholder="e.g. 45"
-              placeholderTextColor="#6b7a99" keyboardType="numeric"
-              value={customRest} onChangeText={setCustomRest} autoFocus
+              style={{ backgroundColor: C.bg, borderRadius: 12, borderWidth: 1, borderColor: C.border, color: C.text, fontSize: 18, fontWeight: '700', textAlign: 'center', padding: 14, marginBottom: 14, fontFamily: F.heading }}
+              placeholder="e.g. 45" placeholderTextColor={C.textSub}
+              keyboardType="numeric" value={customRest}
+              onChangeText={setCustomRest} autoFocus
             />
-            <TouchableOpacity style={s.restPickerSave} onPress={() => {
-              const v = parseInt(customRest);
-              if (v > 0) { setRestDuration(v); setShowRestPicker(false); setCustomRest(''); }
-              else Alert.alert('Invalid', 'Enter a number > 0');
-            }}>
-              <Text style={s.restPickerSaveText}>Set Rest Time</Text>
+            <TouchableOpacity
+              style={{ backgroundColor: C.accent, borderRadius: 12, padding: 14, alignItems: 'center' }}
+              onPress={() => {
+                const v = parseInt(customRest);
+                if (v > 0) { setRestDuration(v); setShowRestPicker(false); setCustomRest(''); }
+                else Alert.alert('Invalid', 'Enter a number > 0');
+              }}
+            >
+              <Text style={{ color: C.btnText, fontWeight: '800', fontSize: 15, fontFamily: F.heading }}>Set Rest Time</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
     </View>
   );
 }
-
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#080b10' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 10 },
-  iconBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#131822', borderWidth: 1, borderColor: '#1e2535', alignItems: 'center', justifyContent: 'center' },
-  timerWrap: { alignItems: 'center' },
-  timerLabel: { color: '#6b7a99', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  timer: { color: '#ffffff', fontSize: 32, fontWeight: '800' },
-  finishBtn: { backgroundColor: '#00f5c4', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 8 },
-  finishBtnText: { color: '#080b10', fontWeight: '800', fontSize: 14 },
-  statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 20, marginBottom: 10, backgroundColor: '#131822', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#1e2535', gap: 8 },
-  statChip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
-  statDivider: { width: 1, height: 20, backgroundColor: '#1e2535' },
-  statValue: { color: '#ffffff', fontWeight: '800', fontSize: 16 },
-  statLabel: { color: '#6b7a99', fontSize: 11, fontWeight: '600' },
-  restConfigRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, marginBottom: 10, flexWrap: 'wrap' },
-  restConfigLabel: { color: '#6b7a99', fontSize: 12, marginRight: 2 },
-  restChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: '#131822', borderWidth: 1, borderColor: '#1e2535' },
-  restChipActive: { backgroundColor: 'rgba(0,245,196,0.15)', borderColor: '#00f5c4' },
-  restChipText: { color: '#6b7a99', fontSize: 12, fontWeight: '600' },
-  restChipTextActive: { color: '#00f5c4' },
-  progressBg: { height: 4, backgroundColor: '#131822', marginHorizontal: 20, borderRadius: 2 },
-  progressFill: { height: 4, backgroundColor: '#00f5c4', borderRadius: 2 },
-  progressLabel: { color: '#6b7a99', fontSize: 12, textAlign: 'center', marginTop: 6, marginBottom: 4 },
-  restBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 20, marginTop: 8, backgroundColor: '#131822', borderRadius: 14, padding: 12, borderWidth: 1.5, borderColor: 'rgba(0,245,196,0.3)' },
-  restEmoji: { fontSize: 26 },
-  restTitle: { color: '#6b7a99', fontSize: 11, fontWeight: '600' },
-  restCount: { color: '#00f5c4', fontSize: 22, fontWeight: '800' },
-  restBarBg: { height: 3, backgroundColor: '#0e1219', borderRadius: 2, marginTop: 4, overflow: 'hidden' },
-  restBarFill: { height: 3, backgroundColor: '#00f5c4' },
-  skipBtn: { backgroundColor: '#0e1219', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: '#1e2535' },
-  skipBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 13 },
-  scroll: { padding: 20 },
-  workoutType: { color: '#6b7a99', fontSize: 12, fontWeight: '700', letterSpacing: 1.5, marginBottom: 14, textTransform: 'uppercase' },
-  exCard: { backgroundColor: '#131822', borderRadius: 18, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#1e2535' },
-  exCardDone: { borderColor: 'rgba(0,245,196,0.3)', backgroundColor: 'rgba(0,245,196,0.04)' },
-  exCardResting: { borderColor: 'rgba(0,245,196,0.2)' },
-  exHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  exEmoji: { fontSize: 24 },
-  exName: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
-  exMuscle: { color: '#6b7a99', fontSize: 12, marginTop: 1 },
-  restingBadge: { backgroundColor: 'rgba(0,245,196,0.12)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  restingBadgeText: { color: '#00f5c4', fontSize: 11, fontWeight: '700' },
-  setHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6, paddingHorizontal: 2 },
-  setHeaderCell: { color: '#3a4560', fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
-  setRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#0e1219', borderRadius: 12, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#1e2535' },
-  setRowDone: { borderColor: 'rgba(0,245,196,0.2)', backgroundColor: 'rgba(0,245,196,0.05)' },
-  setRowResting: { borderColor: 'rgba(0,245,196,0.35)' },
-  setNum: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#1e2535', alignItems: 'center', justifyContent: 'center' },
-  setNumDone: { backgroundColor: '#00f5c4' },
-  setNumText: { color: '#6b7a99', fontWeight: '700', fontSize: 12 },
-  setInput: { flex: 1, height: 38, backgroundColor: '#131822', borderRadius: 10, borderWidth: 1, borderColor: '#1e2535', color: '#ffffff', fontWeight: '600', fontSize: 15, textAlign: 'center' },
-  setInputDone: { color: '#00f5c4', borderColor: 'rgba(0,245,196,0.2)', backgroundColor: 'rgba(0,245,196,0.05)' },
-  doneBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#1e2535', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#1e2535' },
-  doneBtnActive: { backgroundColor: '#00f5c4', borderColor: '#00f5c4' },
-  setActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  addSetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: 'rgba(0,245,196,0.06)', borderWidth: 1, borderColor: 'rgba(0,245,196,0.2)' },
-  addSetText: { color: '#00f5c4', fontSize: 13, fontWeight: '600' },
-  removeSetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, backgroundColor: 'rgba(255,107,107,0.06)', borderWidth: 1, borderColor: 'rgba(255,107,107,0.2)' },
-  removeSetText: { color: '#ff6b6b', fontSize: 13, fontWeight: '600' },
-  bigFinishBtn: { backgroundColor: 'rgba(0,245,196,0.1)', borderRadius: 18, padding: 20, alignItems: 'center', marginTop: 8, borderWidth: 1.5, borderColor: 'rgba(0,245,196,0.3)' },
-  bigFinishText: { color: '#00f5c4', fontSize: 18, fontWeight: '800' },
-  bigFinishSub: { color: '#6b7a99', fontSize: 13, marginTop: 4 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center' },
-  restPickerCard: { width: 280, backgroundColor: '#131822', borderRadius: 20, padding: 24, borderWidth: 1, borderColor: '#1e2535' },
-  restPickerTitle: { color: '#ffffff', fontWeight: '700', fontSize: 16, marginBottom: 16 },
-  restPickerInput: { backgroundColor: '#0e1219', borderRadius: 12, borderWidth: 1, borderColor: '#1e2535', color: '#ffffff', fontSize: 18, fontWeight: '700', textAlign: 'center', padding: 14, marginBottom: 14 },
-  restPickerSave: { backgroundColor: '#00f5c4', borderRadius: 12, padding: 14, alignItems: 'center' },
-  restPickerSaveText: { color: '#080b10', fontWeight: '800', fontSize: 15 },
-  removeExBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: 'rgba(255,107,107,0.08)', borderWidth: 1, borderColor: 'rgba(255,107,107,0.2)', alignItems: 'center', justifyContent: 'center', marginLeft: 6 },
-});

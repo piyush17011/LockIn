@@ -351,6 +351,127 @@ ICE: {
   muted:     '#C8DAEC',
   btnText:   '#FFFFFF',
 },
+
+  // 25. COPPER — warm metallic bronze
+  COPPER: {
+    id: 'COPPER', label: 'COPPER',
+    bg:        '#0E0800',
+    surface:   '#1A1000',
+    card:      '#241800',
+    border:    '#3C2800',
+    accent:    '#B87333',
+    accentAlt: '#E8A050',
+    text:      '#FFF4E0',
+    textSub:   '#9A7040',
+    muted:     '#3C2800',
+    btnText:   '#0E0800',
+  },
+
+  // 26. STORM — dark grey + electric purple
+  STORM: {
+    id: 'STORM', label: 'STORM',
+    bg:        '#0C0C12',
+    surface:   '#121220',
+    card:      '#1A1A2E',
+    border:    '#28283C',
+    accent:    '#9B59B6',
+    accentAlt: '#C39BD3',
+    text:      '#F0EEFF',
+    textSub:   '#706080',
+    muted:     '#28283C',
+    btnText:   '#F0EEFF',
+  },
+
+  // 27. CHALK — bright white minimal
+  CHALK: {
+    id: 'CHALK', label: 'CHALK',
+    bg:        '#FFFFFF',
+    surface:   '#F8F8F8',
+    card:      '#F0F0F0',
+    border:    '#E0E0E0',
+    accent:    '#111111',
+    accentAlt: '#555555',
+    text:      '#111111',
+    textSub:   '#666666',
+    muted:     '#CCCCCC',
+    btnText:   '#FFFFFF',
+  },
+
+  // 28. EMBER — smouldering dark amber
+  EMBER: {
+    id: 'EMBER', label: 'EMBER',
+    bg:        '#0F0800',
+    surface:   '#1C1000',
+    card:      '#281800',
+    border:    '#402800',
+    accent:    '#FF8C00',
+    accentAlt: '#FFC444',
+    text:      '#FFF8E8',
+    textSub:   '#A07030',
+    muted:     '#402800',
+    btnText:   '#0F0800',
+  },
+
+  // 29. PEARL — warm cream + gold
+  PEARL: {
+    id: 'PEARL', label: 'PEARL',
+    bg:        '#FDFAF4',
+    surface:   '#F5F0E4',
+    card:      '#EDE8D8',
+    border:    '#D8CEB0',
+    accent:    '#BFA14A',
+    accentAlt: '#8C7030',
+    text:      '#1C1600',
+    textSub:   '#7A6840',
+    muted:     '#C8BC98',
+    btnText:   '#1C1600',
+  },
+
+  // 30. BLOOD — deep dark red + white
+  BLOOD: {
+    id: 'BLOOD', label: 'BLOOD',
+    bg:        '#070000',
+    surface:   '#100000',
+    card:      '#1A0000',
+    border:    '#300000',
+    accent:    '#FF1744',
+    accentAlt: '#FF6E6E',
+    text:      '#FFFFFF',
+    textSub:   '#AA5050',
+    muted:     '#300000',
+    btnText:   '#070000',
+  },
+
+  // 31. CHROME — silver metallic dark
+  CHROME: {
+    id: 'CHROME', label: 'CHROME',
+    bg:        '#0A0A0A',
+    surface:   '#141414',
+    card:      '#1E1E1E',
+    border:    '#2E2E2E',
+    accent:    '#C0C0C0',
+    accentAlt: '#E8E8E8',
+    text:      '#F5F5F5',
+    textSub:   '#888888',
+    muted:     '#333333',
+    btnText:   '#0A0A0A',
+  },
+
+  // 32. AURORA — dark + teal aurora
+  AURORA: {
+    id: 'AURORA', label: 'AURORA',
+    bg:        '#030C10',
+    surface:   '#061820',
+    card:      '#0A2530',
+    border:    '#103840',
+    accent:    '#00E5CC',
+    accentAlt: '#80FFE8',
+    text:      '#E0FFFA',
+    textSub:   '#408A80',
+    muted:     '#103840',
+    btnText:   '#030C10',
+  },
+
 };
 
 // ── Legacy exports — keeps other screens from breaking ────────

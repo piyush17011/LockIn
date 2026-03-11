@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  Modal, Dimensions, LayoutAnimation, Platform, UIManager,
+  Dimensions, LayoutAnimation, Platform, UIManager,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
@@ -16,7 +16,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useWorkoutsContext } from '../../hooks/WorkoutsContext';
 import { logoutUser } from '../../services/authService';
 import { QUOTES } from '../../constants/exercises';
-import WorkoutShareSheet from './WorkoutShareSheet';
+
 import { useTheme } from '../../hooks/ThemeContext';
 import ColorSwitcher from './ColorSwitcher';
 import { format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
@@ -208,14 +208,14 @@ export default function DashboardScreen({ navigation }) {
   const { user, userData }      = useAuth();
   const { workouts, loading }   = useWorkoutsContext();
   const [quote]                 = useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)]);
-  const [shareVisible, setShare]  = useState(false);
+
 
   // ── Pending session banner ─────────────────────────────────
   const [pendingSession, setPendingSession] = useState(null);
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const raw = await AsyncStorage.getItem('active_workout_session');
+        const raw = await AsyncStorage.getItem('active_workout_session'); // matches SESSION_KEY in WorkoutSessionScreen
         if (raw) {
           const session = JSON.parse(raw);
           // Only show banner if it belongs to current user
@@ -296,9 +296,12 @@ export default function DashboardScreen({ navigation }) {
     { label: 'Log',      icon: 'barbell-outline',  color: C.accent,  tab: 'LogWorkout',   onPress: () => {
         if (pendingSession) {
           navigation.navigate('WorkoutSession', {
-            workout: pendingSession.workout,
-            date:    pendingSession.date,
-            onSave:  (w) => { addWorkoutLocally?.(w); },
+            workout:           pendingSession.workout,
+            date:              pendingSession.date,
+            restoredExercises: pendingSession.exercises,
+            restoredSets:      pendingSession.sets,
+            wallStart:         pendingSession.wallStart,
+            onSave:            (w) => { addWorkoutLocally?.(w); },
           });
         } else {
           navigation.navigate('LogWorkout');
@@ -509,9 +512,12 @@ export default function DashboardScreen({ navigation }) {
             <TouchableOpacity
               activeOpacity={0.88}
               onPress={() => navigation.navigate('WorkoutSession', {
-                workout: pendingSession.workout,
-                date:    pendingSession.date,
-                onSave:  (w) => { },
+                workout:           pendingSession.workout,
+                date:              pendingSession.date,
+                restoredExercises: pendingSession.exercises,
+                restoredSets:      pendingSession.sets,
+                wallStart:         pendingSession.wallStart,
+                onSave:            (w) => { },
               })}
               style={{
                 backgroundColor: 'rgba(0,245,196,0.08)',
@@ -629,7 +635,12 @@ export default function DashboardScreen({ navigation }) {
           {/* Share workout */}
           {todayWorkout ? (
             <TouchableOpacity
-              onPress={() => setShare(true)}
+              onPress={() => navigation.navigate('WorkoutShare', {
+                workout: todayWorkout,
+                streak: userData?.streak || 0,
+                userName: displayName,
+                userId: user?.uid,
+              })}
               activeOpacity={0.8}
               style={{
                 flex: 1, backgroundColor: C.accent + '18',
@@ -689,19 +700,6 @@ export default function DashboardScreen({ navigation }) {
 
       </ScrollView>
 
-      {/* ── SHARE MODAL ── */}
-      <Modal visible={shareVisible} animationType="slide" presentationStyle="pageSheet">
-        {todayWorkout && (
-          <WorkoutShareSheet
-            workout={todayWorkout}
-            streak={userData?.streak || 0}
-            userName={displayName}
-            userId={user?.uid}
-            onClose={() => setShare(false)}
-            navigation={navigation}
-          />
-        )}
-      </Modal>
     </View>
   );
 }

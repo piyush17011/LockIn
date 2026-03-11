@@ -89,7 +89,7 @@ function MainStack() {
         <Stack.Screen name="UserProfile"    component={ProfileScreen}        />
         <Stack.Screen name="WorkoutSession" component={WorkoutSessionScreen} options={{ gestureEnabled: false }} />
         <Stack.Screen name="LogWorkout"     component={LogWorkoutScreen}     />
-        <Stack.Screen name="WorkoutShare"   component={WorkoutShareScreen}   options={{ gestureEnabled: false }} />
+        <Stack.Screen name="WorkoutShare"   component={WorkoutShareScreen}   options={{ gestureEnabled: true, presentation: 'card' }} />
       </Stack.Navigator>
     </WorkoutsProvider>
   );

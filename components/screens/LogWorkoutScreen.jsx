@@ -13,6 +13,7 @@ import { getUserPresets, savePreset, deletePreset } from '../../services/presetS
 import { WORKOUT_TYPES, PRESET_EXERCISES } from '../../constants/exercises';
 import { useTheme } from '../../hooks/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import LottieView from 'lottie-react-native';
 
 // ─── Fallbacks ────────────────────────────────────────────────────────────────
 const HIIT_FALLBACK = [
@@ -42,16 +43,20 @@ const FULLBODY_FALLBACK = [
 
 const toPresetEx = (e) => ({ ...e, sets: [{ weight: '', reps: '' }] });
 
-const PRESET_HERO_EMOJI = {
-  default_push:     '💪',
-  default_pull:     '🔝',
-  default_legs:     '🦵',
-  default_upper:    '🏋️',
-  default_lower:    '🍑',
-  default_fullbody: '⚡',
-  default_hiit:     '🔥',
-  default_cardio:   '🏃',
+// ── Preset hero Lottie sources ────────────────────────────────────────────────
+const PRESET_HERO_LOTTIE = {
+  default_push:     require('../../assets/animations/push.json'),
+  default_pull:     require('../../assets/animations/pull.json'),
+  default_legs:     require('../../assets/animations/leg.json'),
+  default_upper:    require('../../assets/animations/upper.json'),
+  default_lower:    require('../../assets/animations/lower.json'),
+  default_fullbody: require('../../assets/animations/fullbody.json'),
+  default_hiit:     require('../../assets/animations/hiit.json'),
+  default_cardio:   require('../../assets/animations/cardio.json'),
 };
+
+// Themes where the background is near-black (cardio runner is black → use white version)
+const DARK_BG_THEMES = new Set(['INK','VOID','MIDNIGHT','MATRIX','FOREST']);
 
 const DEFAULT_PRESETS = [
   { id: 'default_push',     name: '💪 Push',       exercises: (PRESET_EXERCISES?.['Push']       || []).slice(0, 6).map(toPresetEx) },
@@ -172,7 +177,8 @@ function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function LogWorkoutScreen({ route, navigation }) {
-  const { scheme: C, font: F } = useTheme();
+  const { scheme: C, font: F, schemeName } = useTheme();
+  const isDarkBg = DARK_BG_THEMES.has(schemeName);
 
   const { date, editingWorkout: editingParam } = route.params || {};
   const { user }                               = useAuth();
@@ -714,7 +720,16 @@ export default function LogWorkoutScreen({ route, navigation }) {
                 activeOpacity={0.88}
               >
                 <View style={[s.carouselHeroWrap, { backgroundColor: C.accent + '0e', borderColor: C.accent + '28' }]}>
-                  <Text style={s.carouselHeroEmoji}>{PRESET_HERO_EMOJI[preset.id]}</Text>
+                  <LottieView
+                    source={
+                      preset.id === 'default_cardio' && isDarkBg
+                        ? require('../../assets/animations/cardio_white.json')
+                        : PRESET_HERO_LOTTIE[preset.id]
+                    }
+                    autoPlay
+                    loop
+                    style={{ width: 90, height: 90 }}
+                  />
                 </View>
                 <Text style={[s.carouselCardName, { color: C.text, fontFamily: F.display }]}>{preset.name}</Text>
                 <Text style={[s.carouselCardSub, { color: C.textSub, fontFamily: F.body }]}>{preset.exercises.length} exercises</Text>
