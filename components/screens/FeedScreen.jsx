@@ -567,7 +567,7 @@ const f = StyleSheet.create({
   root:        { flex: 1 },
   loadingRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: 14 },
-  list:        { padding: 20, paddingTop: 60 },
+  list:        { padding: 20, paddingTop: 5 },
   feedHeader:  { marginBottom: 16 },
   feedTitle:   { fontSize: 28, fontWeight: '800' },
   feedSub:     { fontSize: 14, marginTop: 4 },

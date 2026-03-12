@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  Dimensions, LayoutAnimation, Platform, UIManager,
+  Dimensions, LayoutAnimation, Platform, UIManager, Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
 import { useWorkoutsContext } from '../../hooks/WorkoutsContext';
 import { logoutUser } from '../../services/authService';
+import { markRestDay } from '../../services/workoutService';
 import { QUOTES } from '../../constants/exercises';
 
 import { useTheme } from '../../hooks/ThemeContext';
@@ -74,8 +75,13 @@ function AnimatedStreakNumber({ value, style, onDisplayChange }) {
 }
 
 // ── Week dot with spring entrance ──────────────────────────
-function WeekDot({ day, index, worked, isToday, C, ff }) {
+function WeekDot({ day, index, worked, isToday, isRest, C, ff }) {
   const scale = useSharedValue(0);
+  const now = new Date(); now.setHours(0,0,0,0);
+  const dayDate = new Date(day); dayDate.setHours(0,0,0,0);
+  const isPast   = dayDate < now;
+  const isMissed = isPast && !worked && !isRest;
+
   useEffect(() => {
     setTimeout(() => {
       scale.value = withSpring(1, {
@@ -85,6 +91,19 @@ function WeekDot({ day, index, worked, isToday, C, ff }) {
     }, index * 60);
   }, []);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  const bgColor = worked   ? C.accent
+    : isRest               ? '#ff9f4322'
+    : isMissed             ? '#ff6b6b18'
+    : isToday              ? C.accent + '11'
+    : C.surface;
+
+  const borderColor = worked ? 'transparent'
+    : isRest   ? '#ff9f4366'
+    : isMissed ? '#ff6b6b66'
+    : isToday  ? C.accent
+    : C.border;
+
   return (
     <View style={{ alignItems: 'center', gap: 6 }}>
       <Text style={[{ fontSize: 11, letterSpacing: 0.5, color: isToday ? C.accent : C.textSub }, ff.heading]}>
@@ -94,16 +113,19 @@ function WeekDot({ day, index, worked, isToday, C, ff }) {
         <View style={{
           width: 34, height: 34, borderRadius: 17,
           alignItems: 'center', justifyContent: 'center',
-          backgroundColor: worked ? C.accent : isToday ? C.accent + '22' : C.surface,
-          borderWidth: isToday && !worked ? 1.5 : 0,
-          borderColor: C.accent,
+          backgroundColor: bgColor,
+          borderWidth: 1.5, borderColor,
           ...shadow(worked ? C.accent : '#000', worked ? 0.25 : 0.05, 8, 3),
         }}>
           {worked
             ? <Ionicons name="checkmark" size={16} color={C.bg} />
+            : isRest
+              ? <Text style={{ fontSize: 14 }}>😴</Text>
+            : isMissed
+              ? <Text style={{ fontSize: 14 }}>❌</Text>
             : isToday
               ? <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.accent }} />
-              : null
+            : null
           }
         </View>
       </Animated.View>
@@ -206,7 +228,7 @@ export default function DashboardScreen({ navigation }) {
   };
 
   const { user, userData }      = useAuth();
-  const { workouts, loading }   = useWorkoutsContext();
+  const { workouts, loading, restDays = [], addRestDayLocally } = useWorkoutsContext();
   const [quote]                 = useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)]);
 
 
@@ -282,6 +304,11 @@ export default function DashboardScreen({ navigation }) {
 
   const todayWorkout = workouts.find(w => w.date === todayStr) || null;
   const workedDates  = new Set(workouts.map(w => w.date));
+  
+  const restDatesSet = new Set(restDays);
+  const todayStr_    = format(new Date(), 'yyyy-MM-dd');
+  const isTodayRest  = restDatesSet.has(todayStr_);
+  const isTodayWorked = workedDates.has(todayStr_);
   const typeMap      = {};
   [...workouts].reverse().forEach(w => { typeMap[w.date] = w.type; });
 
@@ -313,6 +340,18 @@ export default function DashboardScreen({ navigation }) {
     { label: 'Muscles',  icon: 'fitness-outline',   color: '#54a0ff', tab: 'MuscleMap'    },
   ];
 
+  
+
+  const handleMarkRest = () => {
+    Alert.alert('Mark as Rest Day?', 'This will count toward your streak.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Mark Rest', onPress: () => {
+        addRestDayLocally?.(todayStr_);
+        markRestDay(user.uid, todayStr_).catch(() => Alert.alert('Error', 'Could not save rest day.'));
+      }},
+    ]);
+  };
+
   const cardBg = C.card;
 
   return (
@@ -326,7 +365,7 @@ export default function DashboardScreen({ navigation }) {
         <Animated.View entering={FadeInDown.duration(400)} style={{
           flexDirection: 'row', justifyContent: 'space-between',
           alignItems: 'center',
-          paddingHorizontal: 20, paddingTop: 52, paddingBottom: 8,
+          paddingHorizontal: 20, paddingTop: 10, paddingBottom: 8,
         }}>
           <TouchableOpacity
             onPress={() => navigation.navigate('UserProfile')}
@@ -496,6 +535,7 @@ export default function DashboardScreen({ navigation }) {
                       index={i}
                       worked={worked}
                       isToday={isToday}
+                      isRest={restDatesSet.has(format(day, 'yyyy-MM-dd'))}
                       C={C}
                       ff={ff}
                     />
@@ -542,6 +582,35 @@ export default function DashboardScreen({ navigation }) {
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={C.accent} />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+        {/* ── MARK REST DAY BANNER ── */}
+        {!isTodayWorked && !isTodayRest && (
+          <Animated.View entering={FadeInDown.duration(400).delay(120)} style={{ paddingHorizontal: 20, marginTop: 16 }}>
+            <TouchableOpacity
+              onPress={handleMarkRest}
+              activeOpacity={0.85}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 14,
+                backgroundColor: '#ff9f4312',
+                borderRadius: 18, padding: 16,
+                borderWidth: 1.5, borderColor: '#ff9f4344',
+              }}
+            >
+              <View style={{
+                width: 44, height: 44, borderRadius: 22,
+                backgroundColor: '#ff9f4322',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ fontSize: 22 }}>😴</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[{ fontSize: 14, color: '#ff9f43' }, ff.heading]}>Mark Today as Rest Day</Text>
+                <Text style={[{ fontSize: 12, color: C.textSub, marginTop: 2 }, ff.body]}>Recovery counts toward your streak</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#ff9f43" />
             </TouchableOpacity>
           </Animated.View>
         )}

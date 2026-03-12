@@ -19,14 +19,19 @@ export default function WorkoutShareScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#080b10', paddingTop: insets.top }}>
+    <View style={{ flex: 1, backgroundColor: '#080b10', paddingTop: 0 }}>
       <WorkoutShareSheet
         workout={workout}
         streak={streak ?? 0}
         userName={userName ?? 'Athlete'}
         userId={userId}
         navigation={navigation}
-        onClose={() => navigation.goBack()}
+        onClose={() => {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Main', params: { screen: 'Tabs', params: { screen: 'Dashboard' } } }],
+          });
+        }}
       />
     </View>
   );

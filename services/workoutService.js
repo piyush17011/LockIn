@@ -6,6 +6,7 @@ export const logWorkout = async (userId, workoutData) => {
   const ref = await addDoc(collection(db, 'workouts'), {
     userId, ...workoutData,
     date: workoutData.date || format(new Date(), 'yyyy-MM-dd'),
+    savedAt: workoutData.savedAt || Date.now(),
     createdAt: serverTimestamp(),
   });
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -19,7 +20,7 @@ export const getUserWorkouts = async (userId) => {
   const q = query(collection(db, 'workouts'), where('userId', '==', userId));
   const snap = await getDocs(q);
   const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  return docs.sort((a, b) => (a.date > b.date ? -1 : 1));
+  return docs.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0) || (a.date > b.date ? -1 : 1));
 };
 
 export const getWorkoutByDate = async (userId, date) => {

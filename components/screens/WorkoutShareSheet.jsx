@@ -31,7 +31,7 @@ import {
 const { width: SW, height: SH } = Dimensions.get('window');
 
 // ─── Thumbnail renderer ───────────────────────────────────────────────────────
-function PresetCard({ index, photoUri, workout, streak, userName, fontOpts }) {
+function PresetCard({ index, photoUri, workout, streak, userName, fontOpts, prCount }) {
   const dateStr = workout.date
     ? format(new Date(workout.date + 'T12:00:00'), 'MMM d · yyyy').toUpperCase()
     : format(new Date(), 'MMM d · yyyy').toUpperCase();
@@ -44,7 +44,7 @@ function PresetCard({ index, photoUri, workout, streak, userName, fontOpts }) {
   return (
     <Layout
       photoUri={photoUri} workout={workout} streak={streak} userName={userName}
-      dateStr={dateStr} timeStr={timeStr} calStr={calStr} exCount={exCount}
+      dateStr={dateStr} timeStr={timeStr} calStr={calStr} exCount={exCount} prCount={prCount}
       w={THUMB_W} h={THUMB_H} s={s}
       fontFamily={fontOpts.family}
       sizeScale={fontOpts.sizeScale} letterMult={fontOpts.letterMult} lineMult={fontOpts.lineMult}
@@ -53,7 +53,7 @@ function PresetCard({ index, photoUri, workout, streak, userName, fontOpts }) {
 }
 
 // ─── Off-screen capture target ────────────────────────────────────────────────
-function StoryCard({ cardRef, photoUri, workout, streak, userName, presetIndex, fontOpts, onImageLoad }) {
+function StoryCard({ cardRef, photoUri, workout, streak, userName, presetIndex, fontOpts, onImageLoad, prCount }) {
   const dateStr = workout.date
     ? format(new Date(workout.date + 'T12:00:00'), 'MMM d · yyyy').toUpperCase()
     : format(new Date(), 'MMM d · yyyy').toUpperCase();
@@ -66,7 +66,7 @@ function StoryCard({ cardRef, photoUri, workout, streak, userName, presetIndex, 
       style={{ position: 'absolute', top: -STORY_H - 100, left: 0, width: STORY_W, height: STORY_H, overflow: 'hidden' }}>
       <Layout
         photoUri={photoUri} workout={workout} streak={streak} userName={userName}
-        dateStr={dateStr} timeStr={timeStr} calStr={calStr} exCount={exCount}
+        dateStr={dateStr} timeStr={timeStr} calStr={calStr} exCount={exCount} prCount={prCount}
         w={STORY_W} h={STORY_H} s={(n) => n}
         fontFamily={fontOpts.family}
         sizeScale={fontOpts.sizeScale} letterMult={fontOpts.letterMult} lineMult={fontOpts.lineMult}
@@ -204,6 +204,20 @@ function ActionBtn({ icon, color, label, onPress, delay = 0 }) {
   );
 }
 
+// ─── Dot indicator (hook must live in its own component, not inside .map) ──────
+function PressDot({ dotWidth, active, accent, muted, onPress }) {
+  const dotStyle = useAnimatedStyle(() => ({
+    width: dotWidth.value,
+    height: 5, borderRadius: 3,
+    backgroundColor: active ? accent : muted,
+  }));
+  return (
+    <TouchableOpacity onPress={onPress}>
+      <Animated.View style={dotStyle} />
+    </TouchableOpacity>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function WorkoutShareSheet(props) {
   const { navigation, route, onClose } = props;
@@ -211,7 +225,24 @@ export default function WorkoutShareSheet(props) {
   const streak   = props.streak   ?? route?.params?.streak   ?? 0;
   const userName = props.userName ?? route?.params?.userName ?? 'Athlete';
   const userId   = props.userId   ?? route?.params?.userId;
-  const handleClose = onClose ?? (() => navigation?.goBack());
+  const prCount  = props.prCount  ?? route?.params?.prCount  ?? 0;
+  const handleClose     = onClose ?? (() => navigation?.goBack());
+  const handleDashboard = () => {
+    if (onClose) { onClose(); return; }
+    navigation?.reset({
+      index: 0,
+      routes: [{
+        name: 'Main',
+        state: {
+          routes: [{
+            name: 'Tabs',
+            state: { routes: [{ name: 'Dashboard' }], index: 0 }
+          }],
+          index: 0,
+        }
+      }],
+    });
+  };
 
   const { scheme: C, font: F } = useTheme();
 
@@ -295,7 +326,7 @@ export default function WorkoutShareSheet(props) {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (camOpen)    { setCamOpen(false);    return true; }
       if (previewing) { setPreviewing(false); return true; }
-      handleClose(); return true;
+      handleDashboard(); return true;
     });
     return () => sub.remove();
   }, [camOpen, previewing]));
@@ -378,27 +409,25 @@ export default function WorkoutShareSheet(props) {
     }, 50);
   };
 
-  if (camOpen) {
-    return (
-      <CameraScreen
-        onCapture={(uri) => {
-          setImageReady(false);
-          setPhotoUri(uri);
-          setCamOpen(false);
-          setTimeout(() => setImageReady(true), 4000);
-        }}
-        onClose={() => setCamOpen(false)}
-        C={C}
-      />
-    );
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }} onStartShouldSetResponder={() => { if (fontPanelOpen) { setFontPanelOpen(false); } return false; }}>
+      {camOpen && (
+        <CameraScreen
+          onCapture={(uri) => {
+            setImageReady(false);
+            setPhotoUri(uri);
+            setCamOpen(false);
+            setTimeout(() => setImageReady(true), 4000);
+          }}
+          onClose={() => setCamOpen(false)}
+          C={C}
+        />
+      )}
+      {!camOpen && (<>
       <StoryCard
         cardRef={cardRef} photoUri={photoUri} workout={workout}
         streak={streak} userName={userName} presetIndex={presetIndex} fontOpts={fontOpts}
-        onImageLoad={() => setImageReady(true)}
+        onImageLoad={() => setImageReady(true)} prCount={prCount}
       />
 
       {/* ─── Full-screen preview modal ─── */}
@@ -421,7 +450,7 @@ export default function WorkoutShareSheet(props) {
                   <Layout
                     photoUri={photoUri} workout={workout} streak={streak} userName={userName}
                     dateStr={dateStr} timeStr={timeStr} calStr={calStr}
-                    exCount={workout.exercises?.length || 0}
+                    exCount={workout.exercises?.length || 0} prCount={prCount}
                     w={SW} h={SH} s={(n) => n}
                     fontFamily={fontOpts.family}
                     sizeScale={fontOpts.sizeScale} letterMult={fontOpts.letterMult} lineMult={fontOpts.lineMult}
@@ -448,18 +477,26 @@ export default function WorkoutShareSheet(props) {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled" onScrollBeginDrag={() => setFontPanelOpen(false)}>
 
         {/* ── HEADER ── */}
-        <Animated.View entering={FadeInDown.duration(350)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16 }}>
+        <Animated.View entering={FadeInDown.duration(350)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16 }}>
           <TouchableOpacity
-            onPress={handleClose}
+            onPress={handleDashboard}
             style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Ionicons name="chevron-back" size={22} color={C.text} />
+            <Ionicons name="home-outline" size={20} color={C.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 24, fontWeight: '900', color: C.text, letterSpacing: -0.5, fontFamily: F.display }}>Share</Text>
-            <Text style={{ fontSize: 12, color: C.textSub, fontWeight: '600', marginTop: 1 }}>
-              {workout.type}{timeStr ? `  ·  ${timeStr}` : ''}{calStr ? `  ·  ${calStr} kcal` : ''}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1, flexWrap: 'wrap' }}>
+              <Text style={{ fontSize: 12, color: C.textSub, fontWeight: '600' }}>
+                {workout.type}{timeStr ? `  ·  ${timeStr}` : ''}{calStr ? `  ·  ${calStr} kcal` : ''}
+              </Text>
+              {prCount > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#00e09620', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: '#00e09640' }}>
+                  <Text style={{ fontSize: 10 }}>🏆</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#00e096' }}>{prCount} PR{prCount > 1 ? 's' : ''}</Text>
+                </View>
+              )}
+            </View>
           </View>
           {/* Font & Style toggle — top right */}
           <TouchableOpacity
@@ -491,7 +528,7 @@ export default function WorkoutShareSheet(props) {
                     onPress={openPreview}
                     style={{ width: THUMB_W, height: THUMB_H, borderRadius: 18, overflow: 'hidden', shadowColor: C.accent, shadowOpacity: i === presetIndex ? 0.25 : 0.1, shadowRadius: 20, elevation: 14 }}
                   >
-                    <PresetCard index={i} photoUri={photoUri} workout={workout} streak={streak} userName={userName} fontOpts={fontOpts} />
+                    <PresetCard index={i} photoUri={photoUri} workout={workout} streak={streak} userName={userName} fontOpts={fontOpts} prCount={prCount} />
                   </TouchableOpacity>
                 </Animated.View>
               </View>
@@ -508,18 +545,16 @@ export default function WorkoutShareSheet(props) {
 
           {/* Animated dots */}
           <View style={{ flexDirection: 'row', gap: 4, marginTop: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 }}>
-            {PRESETS.map((_, i) => {
-              const dotStyle = useAnimatedStyle(() => ({
-                width: dotWidths[i].value,
-                height: 5, borderRadius: 3,
-                backgroundColor: i === presetIndex ? C.accent : C.muted,
-              }));
-              return (
-                <TouchableOpacity key={i} onPress={() => goToPreset(i)}>
-                  <Animated.View style={dotStyle} />
-                </TouchableOpacity>
-              );
-            })}
+            {PRESETS.map((_, i) => (
+              <PressDot
+                key={i}
+                dotWidth={dotWidths[i]}
+                active={i === presetIndex}
+                accent={C.accent}
+                muted={C.muted}
+                onPress={() => goToPreset(i)}
+              />
+            ))}
           </View>
 
           <Text style={{ fontSize: 11, fontWeight: '800', color: C.accent, letterSpacing: 1.5, marginTop: 6, textTransform: 'uppercase', textAlign: 'center' }}>
@@ -583,7 +618,7 @@ export default function WorkoutShareSheet(props) {
         </View>
 
         {/* ── POST BUTTON ── */}
-        <Animated.View entering={FadeInUp.duration(400).delay(200)} style={[postBtnStyle, { marginHorizontal: 20 }]}>
+        <Animated.View entering={FadeInUp.duration(400).delay(200)} style={[postBtnStyle, { marginHorizontal: 20, marginBottom: 6 }]}>
           <TouchableOpacity
             style={[{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, height: 52, backgroundColor: C.accent + '12', borderWidth: 1.5, borderColor: C.accent + '40' }, posting && { opacity: 0.5 }]}
             onPress={handlePost}
@@ -596,6 +631,7 @@ export default function WorkoutShareSheet(props) {
         </Animated.View>
 
       </ScrollView>
+    </>)}
     </View>
   );
 }

@@ -30,7 +30,14 @@ SplashScreen.preventAutoHideAsync();
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
-
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (args[0]?.includes?.('Text strings')) {
+    console.error = originalConsoleError;
+    throw new Error(args[0]);
+  }
+  originalConsoleError(...args);
+};
 function TabNavigator() {
   const insets        = useSafeAreaInsets();
   const { scheme: C } = useTheme();
@@ -43,8 +50,8 @@ function TabNavigator() {
             backgroundColor: C.surface,
             borderTopColor:  C.border,
             borderTopWidth:  1.5,
-            height:          60 + insets.bottom,
-            paddingBottom:   insets.bottom,
+            height:          72 + (insets.bottom > 0 ? insets.bottom / 2 : 0),
+            paddingBottom:   insets.bottom > 0 ? insets.bottom / 2 : 4,
             paddingTop:      8,
           },
           tabBarShowLabel: false,
@@ -97,6 +104,7 @@ function MainStack() {
 
 function AppInner() {
   const { scheme: C } = useTheme();
+  const insets        = useSafeAreaInsets();
   const [user, setUser] = useState(undefined);
 
   useEffect(() => {
@@ -113,18 +121,20 @@ function AppInner() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          <Stack.Screen name="Main" component={MainStack} />
-        ) : (
-          <>
-            <Stack.Screen name="Login"    component={LoginScreen}    />
-            <Stack.Screen name="Register" component={RegisterScreen} />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <View style={{ flex: 1, paddingTop: insets.top }}>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {user ? (
+            <Stack.Screen name="Main" component={MainStack} />
+          ) : (
+            <>
+              <Stack.Screen name="Login"    component={LoginScreen}    />
+              <Stack.Screen name="Register" component={RegisterScreen} />
+            </>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </View>
   );
 }
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, FlatList, BackHandler, Dimensions,
-  KeyboardAvoidingView, Platform, StatusBar,
+  KeyboardAvoidingView, Platform, StatusBar, Modal,
 } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,6 @@ import { getUserPresets, savePreset, deletePreset } from '../../services/presetS
 import { WORKOUT_TYPES, PRESET_EXERCISES } from '../../constants/exercises';
 import { useTheme } from '../../hooks/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import LottieView from 'lottie-react-native';
 
 // ─── Fallbacks ────────────────────────────────────────────────────────────────
 const HIIT_FALLBACK = [
@@ -43,20 +42,16 @@ const FULLBODY_FALLBACK = [
 
 const toPresetEx = (e) => ({ ...e, sets: [{ weight: '', reps: '' }] });
 
-// ── Preset hero Lottie sources ────────────────────────────────────────────────
-const PRESET_HERO_LOTTIE = {
-  default_push:     require('../../assets/animations/push.json'),
-  default_pull:     require('../../assets/animations/pull.json'),
-  default_legs:     require('../../assets/animations/leg.json'),
-  default_upper:    require('../../assets/animations/upper.json'),
-  default_lower:    require('../../assets/animations/lower.json'),
-  default_fullbody: require('../../assets/animations/fullbody.json'),
-  default_hiit:     require('../../assets/animations/hiit.json'),
-  default_cardio:   require('../../assets/animations/cardio.json'),
+const PRESET_HERO_EMOJI = {
+  default_push:     '💪',
+  default_pull:     '🔝',
+  default_legs:     '🦵',
+  default_upper:    '🏋️',
+  default_lower:    '🍑',
+  default_fullbody: '⚡',
+  default_hiit:     '🔥',
+  default_cardio:   '🏃',
 };
-
-// Themes where the background is near-black (cardio runner is black → use white version)
-const DARK_BG_THEMES = new Set(['INK','VOID','MIDNIGHT','MATRIX','FOREST']);
 
 const DEFAULT_PRESETS = [
   { id: 'default_push',     name: '💪 Push',       exercises: (PRESET_EXERCISES?.['Push']       || []).slice(0, 6).map(toPresetEx) },
@@ -73,15 +68,64 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_WIDTH   = SCREEN_WIDTH - 48;
 
 // ─── Exercise Picker (receives C & F as props — can't call hooks in sub-components rendered conditionally) ──
+// Muscles for custom exercise tagging
+const CUSTOM_MUSCLE_OPTIONS = [
+  { label: 'Chest',      value: 'chest'      },
+  { label: 'Back',       value: 'back'       },
+  { label: 'Shoulders',  value: 'shoulders'  },
+  { label: 'Biceps',     value: 'biceps'     },
+  { label: 'Triceps',    value: 'triceps'    },
+  { label: 'Abs / Core', value: 'abs'        },
+  { label: 'Quads',      value: 'quads'      },
+  { label: 'Hamstrings', value: 'hamstrings' },
+  { label: 'Glutes',     value: 'glutes'     },
+  { label: 'Calves',     value: 'calves'     },
+  { label: 'Forearms',   value: 'forearms'   },
+  { label: 'Traps',      value: 'traps'      },
+  { label: 'Full Body',  value: 'full body'  },
+  { label: 'Legs',       value: 'legs'       },
+  { label: 'Cardio',     value: 'cardio'     },
+];
+
+// Muscle filter chips shown in picker
+const MUSCLE_FILTERS = [
+  { label: 'All',       value: null          },
+  { label: 'Chest',     value: 'chest'       },
+  { label: 'Back',      value: 'back'        },
+  { label: 'Shoulders', value: 'shoulders'   },
+  { label: 'Arms',      value: 'arms'        }, // biceps + triceps
+  { label: 'Abs',       value: 'abs'         },
+  { label: 'Legs',      value: 'legs'        }, // quads + hamstrings + glutes + calves
+  { label: 'Cardio',    value: 'cardio'      },
+];
+
+function matchesMuscleFilter(ex, filter) {
+  if (!filter) return true;
+  const m = (ex.muscle || '').toLowerCase();
+  if (filter === 'arms')  return m.includes('bicep') || m.includes('tricep') || m.includes('arm') || m.includes('forearm');
+  if (filter === 'legs')  return m.includes('quad') || m.includes('hamstring') || m.includes('glute') || m.includes('calf') || m.includes('calve') || m.includes('leg');
+  if (filter === 'abs')   return m.includes('abs') || m.includes('core');
+  if (filter === 'cardio')return m.includes('cardio');
+  return m.includes(filter);
+}
+
 function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose, C, F }) {
-  const [search, setSearch]         = useState('');
-  const [customName, setCustomName] = useState('');
+  const [search, setSearch]           = useState('');
+  const [muscleFilter, setMuscleFilter] = useState(null);
+  const [showCustom, setShowCustom]   = useState(false);
+  const [customName, setCustomName]   = useState('');
+  const [muscleModal, setMuscleModal] = useState(false);
+  const [pendingName, setPendingName] = useState('');
 
   useEffect(() => {
     if (!visible) return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => { onClose(); return true; });
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (muscleModal) { setMuscleModal(false); return true; }
+      if (showCustom)  { setShowCustom(false);  return true; }
+      onClose(); return true;
+    });
     return () => sub.remove();
-  }, [visible, onClose]);
+  }, [visible, onClose, muscleModal, showCustom]);
 
   const allExercises = Object.values(PRESET_EXERCISES || {})
     .flat()
@@ -91,9 +135,11 @@ function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose
     ? allExercises
     : PRESET_EXERCISES[workoutType];
 
-  const filtered = pool.filter((e) =>
-    e.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = pool.filter((e) => {
+    const matchSearch = e.name.toLowerCase().includes(search.toLowerCase());
+    const matchFilter = matchesMuscleFilter(e, muscleFilter);
+    return matchSearch && matchFilter;
+  });
 
   if (!visible) return null;
 
@@ -101,16 +147,56 @@ function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose
     <View style={StyleSheet.absoluteFill}>
       <View style={[pk.root, { backgroundColor: C.bg }]}>
         <StatusBar barStyle="light-content" />
+
+        {/* ── Header ── */}
         <View style={[pk.header, { borderColor: C.border }]}>
           <TouchableOpacity onPress={onClose} style={[pk.backBtn, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Ionicons name="arrow-back" size={22} color={C.text} />
+            <Ionicons name="arrow-back" size={20} color={C.text} />
           </TouchableOpacity>
-          <Text style={[pk.title, { color: C.text, fontFamily: F.display }]}>Choose Exercises</Text>
+          <Text style={[pk.title, { color: C.text, fontFamily: F.display }]}>Exercises</Text>
           <TouchableOpacity onPress={onClose} style={[pk.doneBtn, { backgroundColor: C.accent }]}>
             <Text style={[pk.doneBtnText, { color: C.btnText, fontFamily: F.heading }]}>Done</Text>
           </TouchableOpacity>
         </View>
 
+        {/* ── Add custom — always visible at top ── */}
+        {showCustom ? (
+          <View style={[pk.customBox, { backgroundColor: C.surface, borderColor: C.accent + '44' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TextInput
+                style={[pk.customInput, { backgroundColor: C.card, borderColor: C.border, color: C.text, fontFamily: F.body, flex: 1 }]}
+                placeholder="Exercise name..."
+                placeholderTextColor={C.muted}
+                value={customName}
+                onChangeText={setCustomName}
+                autoFocus
+              />
+              <TouchableOpacity
+                style={[pk.customBtn, { backgroundColor: C.accent }, !customName.trim() && { opacity: 0.4 }]}
+                disabled={!customName.trim()}
+                onPress={() => { setPendingName(customName.trim()); setMuscleModal(true); }}
+              >
+                <Text style={[pk.customBtnText, { color: C.btnText, fontFamily: F.heading }]}>Next →</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowCustom(false); setCustomName(''); }}
+                style={{ padding: 8 }}>
+                <Ionicons name="close" size={18} color={C.textSub} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[pk.addCustomBtn, { backgroundColor: C.accent + '15', borderColor: C.accent + '44' }]}
+            onPress={() => setShowCustom(true)}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={C.accent} />
+            <Text style={{ color: C.accent, fontWeight: '700', fontSize: 14, fontFamily: F.heading }}>
+              Add Custom Exercise
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Search ── */}
         <View style={[pk.searchWrap, { backgroundColor: C.surface, borderColor: C.border }]}>
           <Ionicons name="search-outline" size={16} color={C.textSub} style={{ marginRight: 8 }} />
           <TextInput
@@ -120,69 +206,168 @@ function ExercisePicker({ visible, workoutType, selectedNames, onSelect, onClose
             value={search}
             onChangeText={setSearch}
           />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <Ionicons name="close-circle" size={16} color={C.muted} />
+            </TouchableOpacity>
+          )}
         </View>
 
+        {/* ── Muscle filter chips ── */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          style={{ flexShrink: 0 }}
+          contentContainerStyle={{ paddingHorizontal: 20, gap: 8, paddingBottom: 10, paddingTop: 8 }}>
+          {MUSCLE_FILTERS.map((f) => {
+            const active = muscleFilter === f.value;
+            return (
+              <TouchableOpacity
+                key={f.label}
+                onPress={() => setMuscleFilter(active ? null : f.value)}
+                style={{
+                  paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+                  borderWidth: 1.5,
+                  borderColor: active ? C.accent : C.border,
+                  backgroundColor: active ? C.accent : C.surface,
+                }}
+              >
+                <Text style={{ color: active ? C.btnText : C.textSub, fontWeight: '600', fontSize: 12, fontFamily: F.body }}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* ── Exercise list — 2 per row ── */}
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.name}
-          style={{ flex: 1 }}
+          numColumns={2}
+          columnWrapperStyle={{ gap: 10, paddingHorizontal: 16, marginBottom: 10 }}
+          contentContainerStyle={{ paddingBottom: 40, paddingTop: 4 }}
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={<Text style={[pk.emptyText, { color: C.textSub, fontFamily: F.body }]}>No exercises found</Text>}
+          ListEmptyComponent={
+            <Text style={[pk.emptyText, { color: C.textSub, fontFamily: F.body }]}>No exercises found</Text>
+          }
           renderItem={({ item }) => {
             const isSelected = selectedNames.includes(item.name);
             return (
               <TouchableOpacity
-                style={[pk.exRow, { backgroundColor: C.surface, borderColor: C.border },
-                  isSelected && { borderColor: C.accent, backgroundColor: C.accent + '15' }]}
+                style={[pk.exCard, { backgroundColor: C.surface, borderColor: C.border },
+                  isSelected && { borderColor: C.accent, backgroundColor: C.accent + '12' }]}
                 onPress={() => onSelect(item)}
+                activeOpacity={0.75}
               >
-                <Text style={pk.exEmoji}>{item.emoji}</Text>
-                <View style={pk.exInfo}>
-                  <Text style={[pk.exName, { color: isSelected ? C.accent : C.text, fontFamily: F.heading }]}>{item.name}</Text>
-                  <Text style={[pk.exMuscle, { color: C.textSub, fontFamily: F.body }]}>{item.muscle}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 22 }}>{item.emoji}</Text>
+                  <View style={[pk.checkCircle, { borderColor: isSelected ? C.accent : C.border },
+                    isSelected && { backgroundColor: C.accent }]}>
+                    {isSelected && <Ionicons name="checkmark" size={11} color={C.btnText} />}
+                  </View>
                 </View>
-                <View style={[pk.checkCircle, { borderColor: C.border },
-                  isSelected && { backgroundColor: C.accent, borderColor: C.accent }]}>
-                  {isSelected && <Ionicons name="checkmark" size={14} color={C.btnText} />}
-                </View>
+                <Text style={[pk.exName, { color: isSelected ? C.accent : C.text, fontFamily: F.heading }]}
+                  numberOfLines={2}>{item.name}</Text>
+                <Text style={[pk.exMuscle, { color: C.muted, fontFamily: F.body }]}
+                  numberOfLines={1}>{item.muscle}</Text>
               </TouchableOpacity>
             );
           }}
-          ListFooterComponent={
-            <View style={pk.customSection}>
-              <Text style={[pk.customLabel, { color: C.textSub, fontFamily: F.heading }]}>CAN'T FIND IT? ADD CUSTOM</Text>
-              <View style={pk.customRow}>
-                <TextInput
-                  style={[pk.customInput, { backgroundColor: C.card, borderColor: C.border, color: C.text, fontFamily: F.body }]}
-                  placeholder="Exercise name..."
-                  placeholderTextColor={C.textSub}
-                  value={customName}
-                  onChangeText={setCustomName}
-                />
-                <TouchableOpacity
-                  style={[pk.customBtn, { backgroundColor: C.accent }, !customName && { opacity: 0.4 }]}
-                  disabled={!customName}
-                  onPress={() => { onSelect({ name: customName.trim(), emoji: '💪', muscle: 'Custom' }); setCustomName(''); }}
-                >
-                  <Text style={[pk.customBtnText, { color: C.btnText, fontFamily: F.heading }]}>Add</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          }
         />
       </View>
+
+      {/* ── Muscle picker modal ── */}
+      <Modal visible={muscleModal} transparent animationType="slide" onRequestClose={() => setMuscleModal(false)}>
+        <View style={{ flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: C.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40 }}>
+            <View style={{ alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderColor: C.border }}>
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 12 }} />
+              <Text style={{ color: C.text, fontSize: 17, fontWeight: '700', fontFamily: F.heading }}>
+                What does "{pendingName}" train?
+              </Text>
+              <Text style={{ color: C.textSub, fontSize: 13, marginTop: 4, fontFamily: F.body }}>
+                Helps track muscle usage on your body map
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 20 }}>
+              {CUSTOM_MUSCLE_OPTIONS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.value}
+                  onPress={() => {
+                    onSelect({ name: pendingName, emoji: '💪', muscle: opt.value });
+                    setCustomName(''); setMuscleModal(false); setPendingName(''); setShowCustom(false);
+                  }}
+                  style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, borderWidth: 1.5,
+                    borderColor: C.accent + '55', backgroundColor: C.surface }}
+                >
+                  <Text style={{ color: C.text, fontWeight: '600', fontSize: 14, fontFamily: F.body }}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
+const pk = StyleSheet.create({
+  root:        { flex: 1, paddingTop: 56 },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, marginBottom: 8 },
+  backBtn:     { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  title:       { fontSize: 18, fontWeight: '800' },
+  doneBtn:     { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 7 },
+  doneBtnText: { fontWeight: '800', fontSize: 13 },
+  addCustomBtn:{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 10, paddingVertical: 11, paddingHorizontal: 16, borderRadius: 14, borderWidth: 1.5 },
+  customBox:   { marginHorizontal: 16, marginBottom: 10, padding: 12, borderRadius: 14, borderWidth: 1.5 },
+  customInput: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, height: 44, fontSize: 14 },
+  customBtn:   { borderRadius: 12, paddingHorizontal: 18, alignItems: 'center', justifyContent: 'center', height: 44 },
+  customBtnText:{ fontWeight: '800', fontSize: 13 },
+  searchWrap:  { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, height: 44, marginBottom: 10, marginHorizontal: 16 },
+  searchInput: { flex: 1, fontSize: 14 },
+  exCard:      { flex: 1, borderRadius: 16, padding: 14, borderWidth: 1.5, minHeight: 100 },
+  exName:      { fontWeight: '700', fontSize: 13, lineHeight: 18 },
+  exMuscle:    { fontSize: 11, marginTop: 3 },
+  checkCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  emptyText:   { textAlign: 'center', paddingVertical: 40, fontSize: 14 },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function LogWorkoutScreen({ route, navigation }) {
-  const { scheme: C, font: F, schemeName } = useTheme();
-  const isDarkBg = DARK_BG_THEMES.has(schemeName);
+  const { scheme: C, font: F } = useTheme();
 
   const { date, editingWorkout: editingParam } = route.params || {};
   const { user }                               = useAuth();
-  const { addWorkoutLocally, refresh }         = useWorkoutsContext();
+  const { workouts, addWorkoutLocally, refresh } = useWorkoutsContext();
+
+  // Build prevSetsMap from workouts — called right before navigating so it's always fresh
+  const buildPrevSetsMap = () => {
+    const map = {};
+    if (!workouts?.length) return map;
+    const sorted = [...workouts].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0) || (b.date || '').localeCompare(a.date || ''));
+    const cardioKw = ['cardio','run','bike','cycle','row','swim','elliptical','jump','treadmill','stair'];
+    const isCardioEx = (name = '', muscle = '') =>
+      cardioKw.some(k => name.toLowerCase().includes(k) || muscle.toLowerCase().includes(k));
+    for (const w of sorted) {
+      for (const ex of w.exercises || []) {
+        if (map[ex.name] || !ex.sets) continue;
+        const repsArr   = typeof ex.reps   === 'string' ? ex.reps.split('/') : [];
+        const weightArr = typeof ex.weight === 'string' ? ex.weight.split('/') : [];
+        const count     = parseInt(ex.sets) || repsArr.length || 1;
+        const cardio    = ex.isCardio || isCardioEx(ex.name, ex.muscle || '');
+        map[ex.name] = Array.from({ length: count }, (_, i) => {
+          if (cardio) {
+            const raw = repsArr[i] || repsArr[0] || '0:00';
+            const [m, s] = raw.split(':');
+            return { minutes: m || '0', seconds: s || '00', isCardio: true };
+          }
+          return { weight: weightArr[i] || weightArr[0] || '', reps: repsArr[i] || repsArr[0] || '' };
+        });
+      }
+    }
+    return map;
+  };
 
   const DRAFT_KEY = user?.uid ? `workout_draft_${user.uid}` : null;
 
@@ -402,6 +587,7 @@ export default function LogWorkoutScreen({ route, navigation }) {
                   })),
                 },
                 date,
+                prevSetsMap: buildPrevSetsMap(),
                 onSave: (w) => addWorkoutLocally(w),
               });
             }}
@@ -715,21 +901,13 @@ export default function LogWorkoutScreen({ route, navigation }) {
                 onPress={() => navigation.navigate('WorkoutSession', {
                   workout: { type: preset.name, exercises: preset.exercises },
                   date,
+                  prevSetsMap: buildPrevSetsMap(),
                   onSave: (w) => addWorkoutLocally(w),
                 })}
                 activeOpacity={0.88}
               >
                 <View style={[s.carouselHeroWrap, { backgroundColor: C.accent + '0e', borderColor: C.accent + '28' }]}>
-                  <LottieView
-                    source={
-                      preset.id === 'default_cardio' && isDarkBg
-                        ? require('../../assets/animations/cardio_white.json')
-                        : PRESET_HERO_LOTTIE[preset.id]
-                    }
-                    autoPlay
-                    loop
-                    style={{ width: 90, height: 90 }}
-                  />
+                  <Text style={s.carouselHeroEmoji}>{PRESET_HERO_EMOJI[preset.id]}</Text>
                 </View>
                 <Text style={[s.carouselCardName, { color: C.text, fontFamily: F.display }]}>{preset.name}</Text>
                 <Text style={[s.carouselCardSub, { color: C.textSub, fontFamily: F.body }]}>{preset.exercises.length} exercises</Text>
@@ -763,7 +941,7 @@ export default function LogWorkoutScreen({ route, navigation }) {
 // ─── Styles (layout only — all colors applied inline via C & F) ───────────────
 const s = StyleSheet.create({
   root:             { flex: 1 },
-  header:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12, borderBottomWidth: 1 },
+  header:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12, borderBottomWidth: 1 },
   backBtn:          { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   headerTitle:      { fontSize: 18, fontWeight: '800' },
   saveHeaderBtn:    { borderRadius: 999, paddingHorizontal: 18, paddingVertical: 8 },
@@ -826,27 +1004,3 @@ const s = StyleSheet.create({
   previewExSets:    { fontSize: 13 },
 });
 
-// ─── Picker styles (layout only) ──────────────────────────────────────────────
-const pk = StyleSheet.create({
-  root:        { flex: 1, paddingTop: 56 },
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 12, borderBottomWidth: 1, marginBottom: 8 },
-  backBtn:     { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  title:       { fontSize: 18, fontWeight: '800' },
-  doneBtn:     { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 7 },
-  doneBtnText: { fontWeight: '800', fontSize: 13 },
-  searchWrap:  { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, height: 46, marginBottom: 10, marginHorizontal: 24 },
-  searchInput: { flex: 1, fontSize: 14 },
-  exRow:       { flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 16, marginBottom: 8, borderWidth: 1, marginHorizontal: 24 },
-  exEmoji:     { fontSize: 26, marginRight: 16 },
-  exInfo:      { flex: 1 },
-  exName:      { fontWeight: '600', fontSize: 15 },
-  exMuscle:    { fontSize: 12, marginTop: 2 },
-  checkCircle: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  emptyText:   { textAlign: 'center', paddingVertical: 24, fontSize: 14 },
-  customSection:{ marginTop: 24, marginBottom: 32, marginHorizontal: 24 },
-  customLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
-  customRow:   { flexDirection: 'row', gap: 8 },
-  customInput: { flex: 1, borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, height: 48, fontSize: 14 },
-  customBtn:   { borderRadius: 14, paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center', height: 48 },
-  customBtnText:{ fontWeight: '800', fontSize: 14 },
-});

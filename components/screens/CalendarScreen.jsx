@@ -202,7 +202,7 @@ export default function CalendarScreen({ navigation, route }) {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <RNAnimated.ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48, paddingTop: 64 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 48, paddingTop: 12 }}
         onScroll={RNAnimated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: false }
